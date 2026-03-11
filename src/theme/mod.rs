@@ -1,12 +1,14 @@
+pub mod palettes;
+
 use ratatui::style::Color;
 
 /// Semantic color theme for all framework widgets and panels.
 ///
-/// Every built-in overlay, footer, and panel border respects these colors.
-/// Override `Application::theme()` to customise. Full palette support (Nord,
-/// Tokyo Night, etc.) lands in Phase 6.
+/// Every built-in overlay, footer, panel border, and toast respects these
+/// colors. Override `Application::theme()` to customise.
 #[derive(Debug, Clone)]
 pub struct Theme {
+    pub name: &'static str,
     pub bg: Color,
     pub surface: Color,
     pub text: Color,
@@ -21,17 +23,19 @@ pub struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self {
-            bg: Color::Reset,
-            surface: Color::Reset,
-            text: Color::White,
-            text_muted: Color::DarkGray,
-            border: Color::DarkGray,
-            border_focused: Color::Cyan,
-            accent: Color::Cyan,
-            success: Color::Green,
-            warning: Color::Yellow,
-            error: Color::Red,
-        }
+        palettes::nord()
+    }
+}
+
+impl Theme {
+    /// Cycle to the next built-in palette.
+    pub fn next(&self) -> Self {
+        let all = palettes::all();
+        let idx = all
+            .iter()
+            .position(|t| t.name == self.name)
+            .map(|i| (i + 1) % all.len())
+            .unwrap_or(0);
+        all.into_iter().nth(idx).unwrap()
     }
 }

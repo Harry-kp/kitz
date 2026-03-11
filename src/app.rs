@@ -8,6 +8,7 @@ use ratatui::Frame;
 use crate::command::Command;
 use crate::context::{Context, EventContext, ViewContext};
 use crate::panel::{KeyHint, PanelId, PanelLayout};
+use crate::subscription::Subscription;
 use crate::theme::Theme;
 
 /// Result of processing a terminal event.
@@ -113,5 +114,11 @@ pub trait Application: Sized + 'static {
 
     fn theme(&self) -> Theme {
         Theme::default()
+    }
+
+    /// Declarative subscriptions. The runtime starts/stops background tasks
+    /// based on the set returned here each frame.
+    fn subscriptions(&self) -> Vec<Subscription<Self::Message>> {
+        Subscription::none()
     }
 }

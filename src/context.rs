@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use crate::overlay::Overlay;
 use crate::panel::PanelId;
+use crate::toast::{Toast, ToastLevel};
 
 /// Runtime intents accumulated during `update()` and processed afterwards.
 pub(crate) enum Intent<M: Debug + Send + 'static> {
@@ -9,6 +10,7 @@ pub(crate) enum Intent<M: Debug + Send + 'static> {
     PopOverlay,
     FocusPanel(PanelId),
     ToggleZoom,
+    ShowToast(Toast),
 }
 
 /// Mutable context passed to [`Application::update`](crate::app::Application::update).
@@ -44,6 +46,12 @@ impl<M: Debug + Send + 'static> Context<M> {
     /// Toggle zoom on the focused panel.
     pub fn toggle_zoom(&mut self) {
         self.intents.push(Intent::ToggleZoom);
+    }
+
+    /// Show a toast notification.
+    pub fn toast(&mut self, message: impl Into<String>, level: ToastLevel) {
+        self.intents
+            .push(Intent::ShowToast(Toast::new(message, level)));
     }
 }
 

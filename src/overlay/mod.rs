@@ -1,6 +1,8 @@
+pub mod command_palette;
 pub mod confirm;
 pub mod help;
 
+pub use command_palette::{CommandPaletteOverlay, PaletteCommand};
 pub use confirm::ConfirmOverlay;
 pub use help::HelpOverlay;
 

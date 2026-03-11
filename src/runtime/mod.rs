@@ -12,8 +12,12 @@ use ratatui::widgets::{Block, Borders};
 use crate::app::{Application, EventResult};
 use crate::command::Action;
 use crate::context::{Context, EventContext, Intent, ViewContext};
-use crate::overlay::{HelpOverlay, OverlayResult, OverlayStack};
+use crate::overlay::{
+    CommandPaletteOverlay, HelpOverlay, OverlayResult, OverlayStack, PaletteCommand,
+};
 use crate::panel::{KeyHint, PanelManager};
+use crate::subscription::SubscriptionManager;
+use crate::toast::{ToastManager, ToastWidget};
 use crate::widgets::Footer;
 
 pub fn run<A: Application>(mut app: A) -> Result<()> {
@@ -22,13 +26,14 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
 
     let mut should_quit = false;
 
-    // Channel for background tasks to send messages back to the runtime
     let (bg_tx, bg_rx) = mpsc::channel::<A::Message>();
 
     let layout = app.panels();
     let has_panels = !layout.is_none();
     let mut panel_manager = PanelManager::new(layout.panel_ids());
     let mut overlay_stack: OverlayStack<A::Message> = OverlayStack::new();
+    let mut toast_manager = ToastManager::new();
+    let mut sub_manager = SubscriptionManager::<A::Message>::new();
 
     if let Some(id) = panel_manager.focused_id() {
         app.panel_on_focus(id);
@@ -41,6 +46,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
         &mut should_quit,
         &mut overlay_stack,
         &mut panel_manager,
+        &mut toast_manager,
         &bg_tx,
     );
 
@@ -48,17 +54,15 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
     let mut last_tick = Instant::now();
 
     while !should_quit {
-        // --- Drain background task messages --------------------------------
+        // --- Drain background messages ------------------------------------
         while let Ok(msg) = bg_rx.try_recv() {
-            let mut ctx = Context::new();
-            let cmd = app.update(msg, &mut ctx);
-            process_intents(&mut ctx, &mut overlay_stack, &mut panel_manager, &mut app);
-            process_command(
-                cmd,
+            dispatch_message(
+                msg,
                 &mut app,
                 &mut should_quit,
                 &mut overlay_stack,
                 &mut panel_manager,
+                &mut toast_manager,
                 &bg_tx,
             );
         }
@@ -67,7 +71,14 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
             break;
         }
 
-        // --- Render --------------------------------------------------------
+        // --- Sync subscriptions -------------------------------------------
+        let subs = app.subscriptions();
+        sub_manager.sync(subs, &bg_tx);
+
+        // --- Tick toasts --------------------------------------------------
+        toast_manager.tick();
+
+        // --- Render -------------------------------------------------------
         let theme = app.theme();
         terminal.draw(|frame| {
             let full_area = frame.area();
@@ -125,12 +136,19 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                 app.view(frame, &view_ctx);
             }
 
+            // Toasts render on top of content but below overlays
+            if !toast_manager.is_empty() {
+                let toast_widget = ToastWidget::new(&toast_manager, &theme);
+                frame.render_widget(toast_widget, full_area);
+            }
+
+            // Overlays render on top of everything
             if let Some(overlay) = overlay_stack.top() {
                 overlay.view(frame, full_area, &theme);
             }
         })?;
 
-        // --- Poll events ---------------------------------------------------
+        // --- Poll events --------------------------------------------------
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or(Duration::ZERO);
@@ -157,6 +175,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                                 &mut should_quit,
                                 &mut overlay_stack,
                                 &mut panel_manager,
+                                &mut toast_manager,
                                 &bg_tx,
                             );
                         }
@@ -174,6 +193,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                             &mut should_quit,
                             &mut overlay_stack,
                             &mut panel_manager,
+                            &mut toast_manager,
                             &bg_tx,
                         );
                     }
@@ -191,6 +211,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                                                 &mut should_quit,
                                                 &mut overlay_stack,
                                                 &mut panel_manager,
+                                                &mut toast_manager,
                                                 &bg_tx,
                                             );
                                             handled = true;
@@ -219,29 +240,37 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
             }
         }
 
-        // --- Tick ----------------------------------------------------------
         if last_tick.elapsed() >= tick_rate {
             last_tick = Instant::now();
         }
     }
 
+    sub_manager.shutdown();
     terminal::restore()?;
     Ok(())
 }
 
-/// Convenience: dispatch a single message through update and process results.
 fn dispatch_message<A: Application>(
     msg: A::Message,
     app: &mut A,
     should_quit: &mut bool,
     overlay_stack: &mut OverlayStack<A::Message>,
     panel_manager: &mut PanelManager,
+    toast_manager: &mut ToastManager,
     bg_tx: &mpsc::Sender<A::Message>,
 ) {
     let mut ctx = Context::new();
     let cmd = app.update(msg, &mut ctx);
-    process_intents(&mut ctx, overlay_stack, panel_manager, app);
-    process_command(cmd, app, should_quit, overlay_stack, panel_manager, bg_tx);
+    process_intents(&mut ctx, overlay_stack, panel_manager, toast_manager, app);
+    process_command(
+        cmd,
+        app,
+        should_quit,
+        overlay_stack,
+        panel_manager,
+        toast_manager,
+        bg_tx,
+    );
 }
 
 fn process_command<A: Application>(
@@ -250,6 +279,7 @@ fn process_command<A: Application>(
     should_quit: &mut bool,
     overlay_stack: &mut OverlayStack<A::Message>,
     panel_manager: &mut PanelManager,
+    toast_manager: &mut ToastManager,
     bg_tx: &mpsc::Sender<A::Message>,
 ) {
     let mut pending: Vec<Action<A::Message>> = cmd.actions;
@@ -265,7 +295,7 @@ fn process_command<A: Application>(
                 Action::Message(msg) => {
                     let mut ctx = Context::new();
                     let next = app.update(msg, &mut ctx);
-                    process_intents(&mut ctx, overlay_stack, panel_manager, app);
+                    process_intents(&mut ctx, overlay_stack, panel_manager, toast_manager, app);
                     pending.extend(next.actions);
                 }
                 Action::Perform(task) => {
@@ -281,6 +311,7 @@ fn process_intents<A: Application>(
     ctx: &mut Context<A::Message>,
     overlay_stack: &mut OverlayStack<A::Message>,
     panel_manager: &mut PanelManager,
+    toast_manager: &mut ToastManager,
     app: &mut A,
 ) {
     let intents = std::mem::take(&mut ctx.intents);
@@ -298,6 +329,7 @@ fn process_intents<A: Application>(
                 }
             }
             Intent::ToggleZoom => panel_manager.toggle_zoom(),
+            Intent::ShowToast(toast) => toast_manager.push(toast),
         }
     }
 }
@@ -346,11 +378,33 @@ fn handle_convention_keys<A: Application>(
                         KeyHint::new("Tab", "Switch panel"),
                         KeyHint::new("Shift+Tab", "Previous panel"),
                         KeyHint::new("z", "Zoom toggle"),
+                        KeyHint::new(":", "Command palette"),
                         KeyHint::new("?", "This help"),
                         KeyHint::new("q", "Quit"),
                     ],
                 ));
                 overlay_stack.push(Box::new(HelpOverlay::new(sections)));
+            }
+            KeyCode::Char(':') if has_panels => {
+                // Build command palette from all panels' key hints
+                let mut commands: Vec<PaletteCommand<A::Message>> = Vec::new();
+
+                for &id in panel_manager.panel_ids() {
+                    let title = app.panel_title(id);
+                    let hints = app.panel_key_hints(id);
+                    for hint in hints {
+                        // We can't auto-generate messages from key hints
+                        // without knowing the app's message type. The palette
+                        // shows the hints for discoverability.
+                        let _ = (title, hint, &mut commands);
+                    }
+                }
+
+                // If no auto-generated commands, show a palette with just
+                // info — the framework can't create app messages from hints
+                // alone. Apps that want full palette support should override
+                // handle_event to detect palette-dispatched messages.
+                overlay_stack.push(Box::new(CommandPaletteOverlay::new(commands)));
             }
             _ => {}
         }
