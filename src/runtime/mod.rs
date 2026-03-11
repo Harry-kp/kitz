@@ -1,5 +1,6 @@
 pub mod terminal;
 
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use color_eyre::Result;
@@ -21,18 +22,18 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
 
     let mut should_quit = false;
 
-    // Initialise panel manager from the app's layout
+    // Channel for background tasks to send messages back to the runtime
+    let (bg_tx, bg_rx) = mpsc::channel::<A::Message>();
+
     let layout = app.panels();
     let has_panels = !layout.is_none();
     let mut panel_manager = PanelManager::new(layout.panel_ids());
     let mut overlay_stack: OverlayStack<A::Message> = OverlayStack::new();
 
-    // Fire the app's initial focus callback
     if let Some(id) = panel_manager.focused_id() {
         app.panel_on_focus(id);
     }
 
-    // Process the init command
     let init_cmd = app.init();
     process_command(
         init_cmd,
@@ -40,19 +41,38 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
         &mut should_quit,
         &mut overlay_stack,
         &mut panel_manager,
+        &bg_tx,
     );
 
     let tick_rate = app.tick_rate();
     let mut last_tick = Instant::now();
 
     while !should_quit {
+        // --- Drain background task messages --------------------------------
+        while let Ok(msg) = bg_rx.try_recv() {
+            let mut ctx = Context::new();
+            let cmd = app.update(msg, &mut ctx);
+            process_intents(&mut ctx, &mut overlay_stack, &mut panel_manager, &mut app);
+            process_command(
+                cmd,
+                &mut app,
+                &mut should_quit,
+                &mut overlay_stack,
+                &mut panel_manager,
+                &bg_tx,
+            );
+        }
+
+        if should_quit {
+            break;
+        }
+
         // --- Render --------------------------------------------------------
         let theme = app.theme();
         terminal.draw(|frame| {
             let full_area = frame.area();
 
             if has_panels {
-                // Convention path: framework renders panels + footer
                 let main_and_footer = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -61,11 +81,9 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                 let main_area = main_and_footer[0];
                 let footer_area = main_and_footer[1];
 
-                // Re-compute the layout each frame (app state might change it)
                 let current_layout = app.panels();
 
                 if panel_manager.is_zoomed() {
-                    // Zoomed: render only the focused panel
                     if let Some(focused_id) = panel_manager.focused_id() {
                         let title = app.panel_title(focused_id);
                         let block = Block::default()
@@ -77,7 +95,6 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                         app.panel_view(focused_id, frame, inner, true);
                     }
                 } else {
-                    // Normal: render all panels
                     let panel_rects = current_layout.compute_rects(main_area);
                     for (id, rect) in &panel_rects {
                         let focused = panel_manager.is_focused(id);
@@ -97,7 +114,6 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                     }
                 }
 
-                // Footer
                 let focused_hints = panel_manager
                     .focused_id()
                     .map(|id| app.panel_key_hints(id))
@@ -105,12 +121,10 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                 let footer = Footer::new(&focused_hints, &theme);
                 frame.render_widget(footer, footer_area);
             } else {
-                // Custom path: let the app render everything
                 let view_ctx = ViewContext::new();
                 app.view(frame, &view_ctx);
             }
 
-            // Overlays render on top of everything
             if let Some(overlay) = overlay_stack.top() {
                 overlay.view(frame, full_area, &theme);
             }
@@ -129,14 +143,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                 continue;
             }
 
-            // Event dispatch chain:
-            // 1. Top overlay (if any)
-            // 2. App handle_event
-            // 3. Focused panel handle_key (if panels exist)
-            // 4. Convention keys
-
             if !overlay_stack.is_empty() {
-                // Route to overlay
                 if let Some(overlay) = overlay_stack.top_mut() {
                     match overlay.handle_event(&ev) {
                         OverlayResult::Close => {
@@ -144,65 +151,47 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                         }
                         OverlayResult::CloseWithMessage(msg) => {
                             overlay_stack.pop();
-                            let mut ctx = Context::new();
-                            let cmd = app.update(msg, &mut ctx);
-                            process_intents(
-                                &mut ctx,
-                                &mut overlay_stack,
-                                &mut panel_manager,
-                                &mut app,
-                            );
-                            process_command(
-                                cmd,
+                            dispatch_message(
+                                msg,
                                 &mut app,
                                 &mut should_quit,
                                 &mut overlay_stack,
                                 &mut panel_manager,
+                                &bg_tx,
                             );
                         }
                         OverlayResult::Consumed | OverlayResult::Ignored => {}
                     }
                 }
             } else {
-                // No overlay — normal dispatch
                 let event_ctx =
                     EventContext::with_state(panel_manager.focused_id(), !overlay_stack.is_empty());
                 match app.handle_event(&ev, &event_ctx) {
                     EventResult::Message(msg) => {
-                        let mut ctx = Context::new();
-                        let cmd = app.update(msg, &mut ctx);
-                        process_intents(&mut ctx, &mut overlay_stack, &mut panel_manager, &mut app);
-                        process_command(
-                            cmd,
+                        dispatch_message(
+                            msg,
                             &mut app,
                             &mut should_quit,
                             &mut overlay_stack,
                             &mut panel_manager,
+                            &bg_tx,
                         );
                     }
                     EventResult::Consumed => {}
                     EventResult::Ignored => {
-                        // Try focused panel
                         let mut handled = false;
                         if has_panels {
                             if let Some(focused_id) = panel_manager.focused_id() {
                                 if let Event::Key(key) = &ev {
                                     match app.panel_handle_key(focused_id, key) {
                                         EventResult::Message(msg) => {
-                                            let mut ctx = Context::new();
-                                            let cmd = app.update(msg, &mut ctx);
-                                            process_intents(
-                                                &mut ctx,
-                                                &mut overlay_stack,
-                                                &mut panel_manager,
-                                                &mut app,
-                                            );
-                                            process_command(
-                                                cmd,
+                                            dispatch_message(
+                                                msg,
                                                 &mut app,
                                                 &mut should_quit,
                                                 &mut overlay_stack,
                                                 &mut panel_manager,
+                                                &bg_tx,
                                             );
                                             handled = true;
                                         }
@@ -240,12 +229,28 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
     Ok(())
 }
 
+/// Convenience: dispatch a single message through update and process results.
+fn dispatch_message<A: Application>(
+    msg: A::Message,
+    app: &mut A,
+    should_quit: &mut bool,
+    overlay_stack: &mut OverlayStack<A::Message>,
+    panel_manager: &mut PanelManager,
+    bg_tx: &mpsc::Sender<A::Message>,
+) {
+    let mut ctx = Context::new();
+    let cmd = app.update(msg, &mut ctx);
+    process_intents(&mut ctx, overlay_stack, panel_manager, app);
+    process_command(cmd, app, should_quit, overlay_stack, panel_manager, bg_tx);
+}
+
 fn process_command<A: Application>(
     cmd: crate::command::Command<A::Message>,
     app: &mut A,
     should_quit: &mut bool,
     overlay_stack: &mut OverlayStack<A::Message>,
     panel_manager: &mut PanelManager,
+    bg_tx: &mpsc::Sender<A::Message>,
 ) {
     let mut pending: Vec<Action<A::Message>> = cmd.actions;
 
@@ -262,6 +267,10 @@ fn process_command<A: Application>(
                     let next = app.update(msg, &mut ctx);
                     process_intents(&mut ctx, overlay_stack, panel_manager, app);
                     pending.extend(next.actions);
+                }
+                Action::Perform(task) => {
+                    let tx = bg_tx.clone();
+                    std::thread::spawn(move || task(tx));
                 }
             }
         }
@@ -301,7 +310,6 @@ fn is_hard_quit(ev: &Event) -> bool {
     )
 }
 
-/// Convention keys handled by the framework when no panel/app handles the event.
 fn handle_convention_keys<A: Application>(
     ev: &Event,
     should_quit: &mut bool,
@@ -314,23 +322,16 @@ fn handle_convention_keys<A: Application>(
         match key.code {
             KeyCode::Char('q') => *should_quit = true,
             KeyCode::Tab if has_panels => {
-                let old = panel_manager.focused_id();
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
                     panel_manager.focus_prev();
                 } else {
                     panel_manager.focus_next();
                 }
-                // Focus callbacks are handled via the &dyn trait — we need
-                // &mut for on_focus/on_blur, so we skip them here in the
-                // convention-key path. They fire in process_intents when
-                // triggered via ctx.focus_panel().
-                let _ = (old, app);
             }
             KeyCode::Char('z') if has_panels => {
                 panel_manager.toggle_zoom();
             }
             KeyCode::Char('?') if has_panels => {
-                // Build help overlay from all panels' key hints
                 let mut sections = Vec::new();
                 for &id in panel_manager.panel_ids() {
                     let title = app.panel_title(id).to_string();

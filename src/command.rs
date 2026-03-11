@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::sync::mpsc;
 
 /// Describes side-effects that the runtime should execute after
 /// [`Application::update`](crate::app::Application::update) returns.
@@ -13,15 +14,9 @@ pub struct Command<M> {
 pub(crate) enum Action<M> {
     Quit,
     Message(M),
-    // Future phases will add:
-    // Perform(BoxFuture<M>),
-    // PushOverlay(Box<dyn Overlay<M>>),
-    // PopOverlay,
-    // PushScreen(Box<dyn Screen<M>>),
-    // PopScreen,
-    // Toast(String, ToastLevel),
-    // FocusPanel(PanelId),
-    // ToggleZoom,
+    /// Spawn a background task. The closure runs on a new thread and sends
+    /// the resulting message through the channel.
+    Perform(Box<dyn FnOnce(mpsc::Sender<M>) + Send>),
 }
 
 impl<M: Debug + Send + 'static> Command<M> {
@@ -51,6 +46,36 @@ impl<M: Debug + Send + 'static> Command<M> {
     pub fn batch(cmds: impl IntoIterator<Item = Command<M>>) -> Self {
         Command {
             actions: cmds.into_iter().flat_map(|c| c.actions).collect(),
+        }
+    }
+
+    /// Spawn a background task. The `task` closure runs on a new thread.
+    /// When it completes, `mapper` converts the result into a message that
+    /// gets dispatched to `Application::update`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Command::perform(
+    ///     || reqwest::blocking::get("https://api.example.com/data")?.text(),
+    ///     |result| match result {
+    ///         Ok(body) => Msg::FetchSuccess(body),
+    ///         Err(e) => Msg::FetchError(e.to_string()),
+    ///     },
+    /// )
+    /// ```
+    pub fn perform<T, F, Map>(task: F, mapper: Map) -> Self
+    where
+        T: Send + 'static,
+        F: FnOnce() -> T + Send + 'static,
+        Map: FnOnce(T) -> M + Send + 'static,
+    {
+        Command {
+            actions: vec![Action::Perform(Box::new(move |tx: mpsc::Sender<M>| {
+                let result = task();
+                let msg = mapper(result);
+                let _ = tx.send(msg);
+            }))],
         }
     }
 
