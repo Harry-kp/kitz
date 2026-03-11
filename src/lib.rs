@@ -1,20 +1,16 @@
 pub mod app;
 pub mod command;
 pub mod context;
-pub mod prelude;
-pub mod runtime;
-
-// Future phases — module stubs
+pub mod logging;
 pub mod overlay;
 pub mod panel;
+pub mod prelude;
+pub mod runtime;
 pub mod screen;
 pub mod subscription;
 pub mod theme;
 pub mod toast;
 pub mod widgets;
-
-// pub mod logging;
-// pub mod testing;
 
 use app::Application;
 use color_eyre::Result;

@@ -15,7 +15,8 @@ use crate::context::{Context, EventContext, Intent, ViewContext};
 use crate::overlay::{
     CommandPaletteOverlay, HelpOverlay, OverlayResult, OverlayStack, PaletteCommand,
 };
-use crate::panel::{KeyHint, PanelManager};
+use crate::panel::{ErrorBoundaryState, KeyHint, PanelManager};
+use crate::screen::NavigationStack;
 use crate::subscription::SubscriptionManager;
 use crate::toast::{ToastManager, ToastWidget};
 use crate::widgets::Footer;
@@ -34,6 +35,8 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
     let mut overlay_stack: OverlayStack<A::Message> = OverlayStack::new();
     let mut toast_manager = ToastManager::new();
     let mut sub_manager = SubscriptionManager::<A::Message>::new();
+    let mut error_boundaries = ErrorBoundaryState::new();
+    let mut nav_stack = NavigationStack::<A::Message>::new();
 
     if let Some(id) = panel_manager.focused_id() {
         app.panel_on_focus(id);
@@ -47,6 +50,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
         &mut overlay_stack,
         &mut panel_manager,
         &mut toast_manager,
+        &mut nav_stack,
         &bg_tx,
     );
 
@@ -63,6 +67,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                 &mut overlay_stack,
                 &mut panel_manager,
                 &mut toast_manager,
+                &mut nav_stack,
                 &bg_tx,
             );
         }
@@ -103,7 +108,9 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                             .border_style(Style::default().fg(theme.border_focused));
                         let inner = block.inner(main_area);
                         frame.render_widget(block, main_area);
-                        app.panel_view(focused_id, frame, inner, true);
+                        error_boundaries.guarded_view(focused_id, frame, inner, |f, a| {
+                            app.panel_view(focused_id, f, a, true);
+                        });
                     }
                 } else {
                     let panel_rects = current_layout.compute_rects(main_area);
@@ -121,7 +128,9 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                             .border_style(Style::default().fg(border_color));
                         let inner = block.inner(*rect);
                         frame.render_widget(block, *rect);
-                        app.panel_view(id, frame, inner, focused);
+                        error_boundaries.guarded_view(id, frame, inner, |f, a| {
+                            app.panel_view(id, f, a, focused);
+                        });
                     }
                 }
 
@@ -176,6 +185,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                                 &mut overlay_stack,
                                 &mut panel_manager,
                                 &mut toast_manager,
+                                &mut nav_stack,
                                 &bg_tx,
                             );
                         }
@@ -194,6 +204,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                             &mut overlay_stack,
                             &mut panel_manager,
                             &mut toast_manager,
+                            &mut nav_stack,
                             &bg_tx,
                         );
                     }
@@ -212,6 +223,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                                                 &mut overlay_stack,
                                                 &mut panel_manager,
                                                 &mut toast_manager,
+                                                &mut nav_stack,
                                                 &bg_tx,
                                             );
                                             handled = true;
@@ -231,6 +243,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                                 &mut should_quit,
                                 &mut panel_manager,
                                 &mut overlay_stack,
+                                &mut nav_stack,
                                 &app,
                                 has_panels,
                             );
@@ -250,6 +263,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dispatch_message<A: Application>(
     msg: A::Message,
     app: &mut A,
@@ -257,11 +271,19 @@ fn dispatch_message<A: Application>(
     overlay_stack: &mut OverlayStack<A::Message>,
     panel_manager: &mut PanelManager,
     toast_manager: &mut ToastManager,
+    nav_stack: &mut NavigationStack<A::Message>,
     bg_tx: &mpsc::Sender<A::Message>,
 ) {
     let mut ctx = Context::new();
     let cmd = app.update(msg, &mut ctx);
-    process_intents(&mut ctx, overlay_stack, panel_manager, toast_manager, app);
+    process_intents(
+        &mut ctx,
+        overlay_stack,
+        panel_manager,
+        toast_manager,
+        nav_stack,
+        app,
+    );
     process_command(
         cmd,
         app,
@@ -269,10 +291,12 @@ fn dispatch_message<A: Application>(
         overlay_stack,
         panel_manager,
         toast_manager,
+        nav_stack,
         bg_tx,
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_command<A: Application>(
     cmd: crate::command::Command<A::Message>,
     app: &mut A,
@@ -280,6 +304,7 @@ fn process_command<A: Application>(
     overlay_stack: &mut OverlayStack<A::Message>,
     panel_manager: &mut PanelManager,
     toast_manager: &mut ToastManager,
+    nav_stack: &mut NavigationStack<A::Message>,
     bg_tx: &mpsc::Sender<A::Message>,
 ) {
     let mut pending: Vec<Action<A::Message>> = cmd.actions;
@@ -295,7 +320,14 @@ fn process_command<A: Application>(
                 Action::Message(msg) => {
                     let mut ctx = Context::new();
                     let next = app.update(msg, &mut ctx);
-                    process_intents(&mut ctx, overlay_stack, panel_manager, toast_manager, app);
+                    process_intents(
+                        &mut ctx,
+                        overlay_stack,
+                        panel_manager,
+                        toast_manager,
+                        nav_stack,
+                        app,
+                    );
                     pending.extend(next.actions);
                 }
                 Action::Perform(task) => {
@@ -312,6 +344,7 @@ fn process_intents<A: Application>(
     overlay_stack: &mut OverlayStack<A::Message>,
     panel_manager: &mut PanelManager,
     toast_manager: &mut ToastManager,
+    nav_stack: &mut NavigationStack<A::Message>,
     app: &mut A,
 ) {
     let intents = std::mem::take(&mut ctx.intents);
@@ -330,6 +363,25 @@ fn process_intents<A: Application>(
             }
             Intent::ToggleZoom => panel_manager.toggle_zoom(),
             Intent::ShowToast(toast) => toast_manager.push(toast),
+            Intent::PushScreen(screen) => {
+                nav_stack.push(screen);
+                // Sync panel manager to the new screen's layout
+                if let Some(top) = nav_stack.top() {
+                    let ids = top.panels().panel_ids();
+                    panel_manager.sync_layout(ids);
+                }
+            }
+            Intent::PopScreen => {
+                nav_stack.pop();
+                // Restore panel manager to the previous screen or app
+                if let Some(top) = nav_stack.top() {
+                    let ids = top.panels().panel_ids();
+                    panel_manager.sync_layout(ids);
+                } else {
+                    let ids = app.panels().panel_ids();
+                    panel_manager.sync_layout(ids);
+                }
+            }
         }
     }
 }
@@ -347,12 +399,26 @@ fn handle_convention_keys<A: Application>(
     should_quit: &mut bool,
     panel_manager: &mut PanelManager,
     overlay_stack: &mut OverlayStack<A::Message>,
+    nav_stack: &mut NavigationStack<A::Message>,
     app: &A,
     has_panels: bool,
 ) {
     if let Event::Key(key) = ev {
         match key.code {
             KeyCode::Char('q') => *should_quit = true,
+            KeyCode::Esc => {
+                // Esc chain: pop overlay -> pop screen -> (nothing)
+                if !overlay_stack.is_empty() {
+                    overlay_stack.pop();
+                } else if !nav_stack.is_empty() {
+                    nav_stack.pop();
+                    if let Some(top) = nav_stack.top() {
+                        panel_manager.sync_layout(top.panels().panel_ids());
+                    } else {
+                        panel_manager.sync_layout(app.panels().panel_ids());
+                    }
+                }
+            }
             KeyCode::Tab if has_panels => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
                     panel_manager.focus_prev();

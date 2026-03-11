@@ -15,6 +15,7 @@ pub use crate::command::Command;
 pub use crate::context::{Context, EventContext, ViewContext};
 pub use crate::overlay::{CommandPaletteOverlay, ConfirmOverlay, PaletteCommand};
 pub use crate::panel::{KeyHint, PanelId, PanelLayout};
+pub use crate::screen::Screen;
 pub use crate::subscription::Subscription;
 pub use crate::theme::Theme;
 pub use crate::toast::ToastLevel;

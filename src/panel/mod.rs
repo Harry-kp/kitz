@@ -1,6 +1,8 @@
+pub mod error_boundary;
 pub mod layout;
 pub mod manager;
 
+pub use error_boundary::ErrorBoundaryState;
 pub use layout::PanelLayout;
 pub use manager::PanelManager;
 
