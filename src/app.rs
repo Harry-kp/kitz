@@ -104,14 +104,17 @@ pub trait Application: Sized + 'static {
 
     // === Metadata ============================================================
 
+    /// Display title for the terminal window.
     fn title(&self) -> &str {
         "rataframe app"
     }
 
+    /// How often the runtime polls for events.
     fn tick_rate(&self) -> Duration {
         Duration::from_millis(250)
     }
 
+    /// The color theme used for panels, overlays, and toasts.
     fn theme(&self) -> Theme {
         Theme::default()
     }

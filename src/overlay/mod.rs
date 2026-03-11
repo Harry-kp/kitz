@@ -31,8 +31,11 @@ pub enum OverlayResult<M> {
 /// Overlays capture all input while open. Press Esc to pop (unless the
 /// overlay overrides that).
 pub trait Overlay<M: Debug + Send + 'static> {
+    /// Display title rendered in the overlay border.
     fn title(&self) -> &str;
+    /// Render the overlay content within the given area.
     fn view(&self, frame: &mut Frame, area: Rect, theme: &Theme);
+    /// Process an input event, returning how it was handled.
     fn handle_event(&mut self, event: &Event) -> OverlayResult<M>;
 }
 
@@ -42,26 +45,32 @@ pub struct OverlayStack<M: Debug + Send + 'static> {
 }
 
 impl<M: Debug + Send + 'static> OverlayStack<M> {
+    /// Create an empty overlay stack.
     pub fn new() -> Self {
         Self { stack: Vec::new() }
     }
 
+    /// Push an overlay onto the stack.
     pub fn push(&mut self, overlay: Box<dyn Overlay<M>>) {
         self.stack.push(overlay);
     }
 
+    /// Pop the topmost overlay.
     pub fn pop(&mut self) {
         self.stack.pop();
     }
 
+    /// Borrow the topmost overlay, if any.
     pub fn top(&self) -> Option<&dyn Overlay<M>> {
         self.stack.last().map(|o| o.as_ref())
     }
 
+    /// Mutably borrow the topmost overlay, if any.
     pub fn top_mut(&mut self) -> Option<&mut Box<dyn Overlay<M>>> {
         self.stack.last_mut()
     }
 
+    /// Returns `true` if no overlays are open.
     pub fn is_empty(&self) -> bool {
         self.stack.is_empty()
     }

@@ -27,6 +27,7 @@ pub struct Toast {
 }
 
 impl Toast {
+    /// Create a toast with a 3-second default TTL.
     pub fn new(message: impl Into<String>, level: ToastLevel) -> Self {
         Self {
             message: message.into(),
@@ -36,11 +37,13 @@ impl Toast {
         }
     }
 
+    /// Override the default time-to-live.
     pub fn with_ttl(mut self, ttl: Duration) -> Self {
         self.ttl = ttl;
         self
     }
 
+    /// Returns `true` if this toast has outlived its TTL.
     pub fn is_expired(&self) -> bool {
         self.created.elapsed() >= self.ttl
     }
@@ -53,10 +56,12 @@ pub struct ToastManager {
 }
 
 impl ToastManager {
+    /// Create an empty toast manager.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Enqueue a toast for display.
     pub fn push(&mut self, toast: Toast) {
         self.toasts.push(toast);
     }
@@ -66,10 +71,12 @@ impl ToastManager {
         self.toasts.retain(|t| !t.is_expired());
     }
 
+    /// Returns `true` if there are no active toasts.
     pub fn is_empty(&self) -> bool {
         self.toasts.is_empty()
     }
 
+    /// Borrow the current toast queue.
     pub fn toasts(&self) -> &[Toast] {
         &self.toasts
     }

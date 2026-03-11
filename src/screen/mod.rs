@@ -46,17 +46,20 @@ pub struct NavigationStack<M: Debug + Send + 'static> {
 }
 
 impl<M: Debug + Send + 'static> NavigationStack<M> {
+    /// Create an empty navigation stack.
     pub fn new() -> Self {
         Self {
             screens: Vec::new(),
         }
     }
 
+    /// Push a screen onto the stack, calling its `on_enter` hook.
     pub fn push(&mut self, mut screen: Box<dyn Screen<M>>) {
         screen.on_enter();
         self.screens.push(screen);
     }
 
+    /// Pop the top screen, calling its `on_leave` hook.
     pub fn pop(&mut self) -> Option<Box<dyn Screen<M>>> {
         if let Some(mut screen) = self.screens.pop() {
             screen.on_leave();
@@ -66,18 +69,22 @@ impl<M: Debug + Send + 'static> NavigationStack<M> {
         }
     }
 
+    /// Borrow the topmost screen, if any.
     pub fn top(&self) -> Option<&dyn Screen<M>> {
         self.screens.last().map(|s| s.as_ref())
     }
 
+    /// Mutably borrow the topmost screen, if any.
     pub fn top_mut(&mut self) -> Option<&mut Box<dyn Screen<M>>> {
         self.screens.last_mut()
     }
 
+    /// Number of screens on the stack.
     pub fn depth(&self) -> usize {
         self.screens.len()
     }
 
+    /// Returns `true` if no screens are on the stack.
     pub fn is_empty(&self) -> bool {
         self.screens.is_empty()
     }
