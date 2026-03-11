@@ -1,0 +1,32 @@
+[package]
+name = "rataframe"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "The application framework for ratatui — panels, overlays, themes, and TEA architecture with convention-driven productivity"
+license = "MIT"
+repository = "https://github.com/Harry-kp/rataframe"
+keywords = ["tui", "ratatui", "framework", "terminal", "tea"]
+categories = ["command-line-interface"]
+
+[dependencies]
+ratatui = "0.30"
+crossterm = "0.29"
+color-eyre = "0.6"
+unicode-width = "0.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+nucleo-matcher = "0.3"
+
+[features]
+default = []
+tokio = ["dep:tokio"]
+
+[dependencies.tokio]
+version = "1"
+features = ["rt-multi-thread", "macros", "time"]
+optional = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
