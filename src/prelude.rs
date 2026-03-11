@@ -16,3 +16,4 @@ pub use crate::context::{Context, EventContext, ViewContext};
 pub use crate::overlay::ConfirmOverlay;
 pub use crate::panel::{KeyHint, PanelId, PanelLayout};
 pub use crate::theme::Theme;
+pub use crate::widgets::{TextInput, TextInputState};
