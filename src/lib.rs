@@ -8,6 +8,7 @@ pub mod prelude;
 pub mod runtime;
 pub mod screen;
 pub mod subscription;
+pub mod testing;
 pub mod theme;
 pub mod toast;
 pub mod widgets;

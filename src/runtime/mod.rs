@@ -4,10 +4,10 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use ratatui::layout::{Constraint, Direction, Layout};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
-use ratatui::widgets::{Block, Borders};
+use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::app::{Application, EventResult};
 use crate::command::Action;
@@ -37,6 +37,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
     let mut sub_manager = SubscriptionManager::<A::Message>::new();
     let mut error_boundaries = ErrorBoundaryState::new();
     let mut nav_stack = NavigationStack::<A::Message>::new();
+    let mut last_panel_rects: Vec<(&str, Rect)> = Vec::new();
 
     if let Some(id) = panel_manager.focused_id() {
         app.panel_on_focus(id);
@@ -88,6 +89,22 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
         terminal.draw(|frame| {
             let full_area = frame.area();
 
+            // Minimum terminal size check
+            if full_area.width < terminal::MIN_WIDTH || full_area.height < terminal::MIN_HEIGHT {
+                let msg = format!(
+                    "Terminal too small ({}x{}). Minimum: {}x{}",
+                    full_area.width,
+                    full_area.height,
+                    terminal::MIN_WIDTH,
+                    terminal::MIN_HEIGHT,
+                );
+                frame.render_widget(
+                    Paragraph::new(msg).style(Style::default().fg(theme.warning)),
+                    full_area,
+                );
+                return;
+            }
+
             if has_panels {
                 let main_and_footer = Layout::default()
                     .direction(Direction::Vertical)
@@ -114,6 +131,7 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
                     }
                 } else {
                     let panel_rects = current_layout.compute_rects(main_area);
+                    last_panel_rects = panel_rects.clone();
                     for (id, rect) in &panel_rects {
                         let focused = panel_manager.is_focused(id);
                         let title = app.panel_title(id);
@@ -168,6 +186,25 @@ pub fn run<A: Application>(mut app: A) -> Result<()> {
             if is_hard_quit(&ev) {
                 should_quit = true;
                 continue;
+            }
+
+            // Mouse click-to-focus: check if click lands on a panel
+            if let Event::Mouse(mouse) = &ev {
+                if mouse.kind == MouseEventKind::Down(crossterm::event::MouseButton::Left)
+                    && has_panels
+                    && overlay_stack.is_empty()
+                {
+                    for (id, rect) in &last_panel_rects {
+                        if rect.x <= mouse.column
+                            && mouse.column < rect.x + rect.width
+                            && rect.y <= mouse.row
+                            && mouse.row < rect.y + rect.height
+                        {
+                            panel_manager.focus_panel(id);
+                            break;
+                        }
+                    }
+                }
             }
 
             if !overlay_stack.is_empty() {

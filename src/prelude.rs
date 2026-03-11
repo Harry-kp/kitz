@@ -17,6 +17,7 @@ pub use crate::overlay::{CommandPaletteOverlay, ConfirmOverlay, PaletteCommand};
 pub use crate::panel::{KeyHint, PanelId, PanelLayout};
 pub use crate::screen::Screen;
 pub use crate::subscription::Subscription;
+pub use crate::testing::TestHarness;
 pub use crate::theme::Theme;
 pub use crate::toast::ToastLevel;
-pub use crate::widgets::{TextInput, TextInputState};
+pub use crate::widgets::{centered_rect, TextInput, TextInputState};
