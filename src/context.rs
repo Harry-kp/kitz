@@ -1,42 +1,111 @@
 use std::fmt::Debug;
 
+use crate::overlay::Overlay;
+use crate::panel::PanelId;
+
+/// Runtime intents accumulated during `update()` and processed afterwards.
+pub(crate) enum Intent<M: Debug + Send + 'static> {
+    PushOverlay(Box<dyn Overlay<M>>),
+    PopOverlay,
+    FocusPanel(PanelId),
+    ToggleZoom,
+}
+
 /// Mutable context passed to [`Application::update`](crate::app::Application::update).
 ///
-/// In Phase 1 this is intentionally minimal. Later phases will expose the
-/// overlay stack, navigation stack, toast queue, and more through this struct.
+/// Use this to push overlays, change panel focus, or toggle zoom from within
+/// your update logic.
 pub struct Context<M: Debug + Send + 'static> {
-    _marker: std::marker::PhantomData<M>,
+    pub(crate) intents: Vec<Intent<M>>,
 }
 
 impl<M: Debug + Send + 'static> Context<M> {
     pub(crate) fn new() -> Self {
         Self {
-            _marker: std::marker::PhantomData,
+            intents: Vec::new(),
         }
+    }
+
+    /// Push a modal overlay (confirm dialog, help screen, etc.).
+    pub fn push_overlay(&mut self, overlay: impl Overlay<M> + 'static) {
+        self.intents.push(Intent::PushOverlay(Box::new(overlay)));
+    }
+
+    /// Pop the topmost overlay.
+    pub fn pop_overlay(&mut self) {
+        self.intents.push(Intent::PopOverlay);
+    }
+
+    /// Move focus to a specific panel.
+    pub fn focus_panel(&mut self, id: PanelId) {
+        self.intents.push(Intent::FocusPanel(id));
+    }
+
+    /// Toggle zoom on the focused panel.
+    pub fn toggle_zoom(&mut self) {
+        self.intents.push(Intent::ToggleZoom);
     }
 }
 
 /// Read-only context passed to [`Application::view`](crate::app::Application::view).
-///
-/// Will eventually carry the current theme, panel state, and a
-/// `render_panels()` helper. For Phase 1 it is an empty marker.
-pub struct ViewContext;
+pub struct ViewContext {
+    pub(crate) focused_panel: Option<PanelId>,
+    pub(crate) zoomed: bool,
+}
 
 impl ViewContext {
     pub(crate) fn new() -> Self {
-        Self
+        Self {
+            focused_panel: None,
+            zoomed: false,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn with_panels(focused: Option<PanelId>, zoomed: bool) -> Self {
+        Self {
+            focused_panel: focused,
+            zoomed,
+        }
+    }
+
+    pub fn focused_panel(&self) -> Option<PanelId> {
+        self.focused_panel
+    }
+
+    pub fn is_zoomed(&self) -> bool {
+        self.zoomed
     }
 }
 
 /// Read-only context passed to
 /// [`Application::handle_event`](crate::app::Application::handle_event).
-///
-/// Will carry information about the currently focused panel, active overlay,
-/// etc. For Phase 1 it is an empty marker.
-pub struct EventContext;
+pub struct EventContext {
+    pub(crate) focused_panel: Option<PanelId>,
+    pub(crate) has_overlay: bool,
+}
 
 impl EventContext {
+    #[allow(dead_code)]
     pub(crate) fn new() -> Self {
-        Self
+        Self {
+            focused_panel: None,
+            has_overlay: false,
+        }
+    }
+
+    pub(crate) fn with_state(focused: Option<PanelId>, has_overlay: bool) -> Self {
+        Self {
+            focused_panel: focused,
+            has_overlay,
+        }
+    }
+
+    pub fn focused_panel(&self) -> Option<PanelId> {
+        self.focused_panel
+    }
+
+    pub fn has_overlay(&self) -> bool {
+        self.has_overlay
     }
 }
