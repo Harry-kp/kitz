@@ -41,24 +41,28 @@ pub trait Application: Sized + 'static {
     // Required
     fn update(&mut self, msg: Self::Message, ctx: &mut Context<Self::Message>) -> Command<Self::Message>;
 
-    // Convention path: declare panels
-    fn panels(&self) -> PanelLayout<Self::Message> { PanelLayout::none() }
-
     // Escape hatch: full rendering control
-    fn view(&self, frame: &mut Frame, ctx: &ViewContext) {
-        ctx.render_panels(frame);
-    }
+    fn view(&self, frame: &mut Frame, ctx: &ViewContext) { /* default placeholder */ }
+
+    // Convention path: declare panels via methods
+    fn panels(&self) -> PanelLayout { PanelLayout::None }
+    fn panel_title(&self, id: PanelId) -> &str { "" }
+    fn panel_view(&self, id: PanelId, frame: &mut Frame, area: Rect, focused: bool) {}
+    fn panel_key_hints(&self, id: PanelId) -> Vec<KeyHint> { vec![] }
+    fn panel_handle_key(&mut self, id: PanelId, key: &KeyEvent) -> EventResult<Self::Message> { EventResult::Ignored }
+    fn panel_on_focus(&mut self, id: PanelId) {}
+    fn panel_on_blur(&mut self, id: PanelId) {}
 
     // Event handling
     fn handle_event(&self, event: &Event, ctx: &EventContext) -> EventResult<Self::Message> {
         EventResult::Ignored
     }
 
-    // Initialization side-effects
+    // Lifecycle
     fn init(&self) -> Command<Self::Message> { Command::none() }
 
-    // App-specific subscriptions (tick + terminal events are built-in)
-    fn subscription(&self) -> Subscription<Self::Message> { Subscription::none() }
+    // Subscriptions
+    fn subscriptions(&self) -> Vec<Subscription<Self::Message>> { vec![] }
 
     // Metadata
     fn title(&self) -> &str { "rataframe app" }
@@ -67,45 +71,31 @@ pub trait Application: Sized + 'static {
 }
 ```
 
-### Panel Trait
+> **Design note:** Panel behavior is expressed as methods on the Application trait
+> rather than as a separate Panel trait. This avoids borrow-checker friction when
+> panels need to read/write shared application state — a common pattern in TUIs.
 
-```rust
-pub trait Panel {
-    type Message;
-
-    fn id(&self) -> &'static str;
-    fn title(&self) -> &'static str;
-    fn view(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme);
-
-    fn key_hints(&self) -> Vec<KeyHint> { vec![] }
-    fn handle_key(&self, key: KeyEvent) -> Option<Self::Message> { None }
-
-    fn on_focus(&mut self) {}
-    fn on_blur(&mut self) {}
-}
-```
-
-Framework auto-behaviors when using Panel:
-1. Renders panels in the declared layout
-2. Draws themed focus border on the focused panel
+Framework auto-behaviors when `panels()` returns a layout:
+1. Renders panels in the declared layout with themed borders
+2. Draws focused border color on the focused panel
 3. Tab/Shift+Tab cycles focus between panels
 4. Mouse click on a panel focuses it
-5. Footer shows focused panel's `key_hints()` + global hints
-6. `?` opens help overlay — all panels' `key_hints()` grouped by title
-7. `:` opens command palette — all actions fuzzy-searchable
-8. Focused panel's `handle_key()` is called before convention keys
-9. `on_focus()` / `on_blur()` fire on focus changes
+5. Footer shows focused panel's `panel_key_hints()` + global hints
+6. `?` opens help overlay — all panels' hints grouped by title
+7. `:` opens command palette — all hints fuzzy-searchable
+8. Focused panel's `panel_handle_key()` is called before convention keys
+9. `panel_on_focus()` / `panel_on_blur()` fire on focus changes
 10. `z` toggles focused panel fullscreen
 
 ### PanelLayout
 
 ```rust
-impl<'a, M> PanelLayout<'a, M> {
-    pub fn none() -> Self;
-    pub fn single(panel: &'a dyn Panel<Message = M>) -> Self;
-    pub fn horizontal(items: Vec<(&'a dyn Panel<Message = M>, Constraint)>) -> Self;
-    pub fn vertical(items: Vec<(&'a dyn Panel<Message = M>, Constraint)>) -> Self;
-    pub fn nested(direction: Direction, children: Vec<(PanelLayout<'a, M>, Constraint)>) -> Self;
+pub enum PanelLayout {
+    None,
+    Single(PanelId),
+    Horizontal(Vec<(PanelId, Constraint)>),
+    Vertical(Vec<(PanelId, Constraint)>),
+    Nested(Direction, Vec<(Box<PanelLayout>, Constraint)>),
 }
 ```
 
@@ -119,7 +109,7 @@ pub enum EventResult<M> {
 }
 ```
 
-### Command (Iced-inspired)
+### Command (side effects)
 
 ```rust
 impl<M: Send + 'static> Command<M> {
@@ -127,21 +117,29 @@ impl<M: Send + 'static> Command<M> {
     pub fn quit() -> Self;
     pub fn batch(cmds: impl IntoIterator<Item = Command<M>>) -> Self;
     pub fn message(msg: M) -> Self;
-
-    pub fn perform<T: Send + 'static>(
-        future: impl Future<Output = T> + Send + 'static,
-        f: impl FnOnce(T) -> M + Send + 'static,
-    ) -> Self;
-
-    pub fn push_overlay(overlay: impl Overlay<M> + 'static) -> Self;
-    pub fn pop_overlay() -> Self;
-    pub fn push_screen(screen: impl Screen<M> + 'static) -> Self;
-    pub fn pop_screen() -> Self;
-    pub fn toast(text: impl Into<String>, level: ToastLevel) -> Self;
-    pub fn focus_panel(id: impl Into<PanelId>) -> Self;
-    pub fn toggle_zoom() -> Self;
+    pub fn perform<T, F, Map>(task: F, mapper: Map) -> Self;  // background thread
 }
 ```
+
+### Context (framework intents)
+
+Framework-level actions are requested via `Context`, which is passed mutably to `update()`:
+
+```rust
+impl<M> Context<M> {
+    pub fn push_overlay(&mut self, overlay: impl Overlay<M> + 'static);
+    pub fn pop_overlay(&mut self);
+    pub fn focus_panel(&mut self, id: PanelId);
+    pub fn toggle_zoom(&mut self);
+    pub fn toast(&mut self, message: impl Into<String>, level: ToastLevel);
+    pub fn push_screen(&mut self, screen: impl Screen<M> + 'static);
+    pub fn pop_screen(&mut self);
+}
+```
+
+> **Design note:** Overlay/screen/toast operations live on Context rather than
+> Command because they require mutable framework state. Command remains a pure
+> description of app-level side effects.
 
 ### Screen Trait (navigation)
 
@@ -170,9 +168,13 @@ Built-in overlays: Confirm, Help (auto-generated), CommandPalette (fuzzy search)
 ### Subscription
 
 ```rust
-pub fn every<M>(duration: Duration, f: impl Fn() -> M) -> Subscription<M>;
-pub fn watch_file<M>(path: PathBuf, f: impl Fn(Event) -> Option<M>) -> Subscription<M>;
+impl<M> Subscription<M> {
+    pub fn none() -> Vec<Self>;
+    pub fn every(id: &'static str, interval: Duration, msg_fn: impl Fn() -> M) -> Self;
+}
 ```
+
+> `watch_file()` is planned for a future release.
 
 ---
 
@@ -254,7 +256,7 @@ Convention keys:
 ### Developer Experience
 19. Logging integration — tracing to file, TUI-safe
 20. TestHarness — simulate keys, assert state, check panel focus
-21. cargo-generate template — scaffold convention project structure
+21. Project template — `template/` directory for scaffolding new apps
 
 ---
 
