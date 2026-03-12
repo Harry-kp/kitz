@@ -150,6 +150,38 @@ cargo run --example todo
 cargo run --example dashboard
 ```
 
+## Start a New Project
+
+**Option A — cargo-generate** (recommended):
+
+```bash
+cargo install cargo-generate
+cargo generate --git https://github.com/Harry-kp/rataframe --path template
+```
+
+**Option B — copy the template:**
+
+```bash
+cp -r template/ my-app && cd my-app
+# rename "{{project-name}}" in Cargo.toml to your app name
+cargo run
+```
+
+You get a working panel app with sidebar, detail view, key hints, and all
+convention keys (Tab, ?, :, z, Esc, q) wired up.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Getting Started](docs/getting-started.md) | Zero to working app in 3 steps |
+| [Migration Guide](docs/migration-from-ratatui.md) | Coming from raw ratatui? Start here |
+| [Cookbook](docs/cookbook.md) | 12 recipes for common patterns |
+| [Design](docs/DESIGN.md) | Architecture and API blueprint |
+| [Decisions](docs/DECISIONS.md) | Why we made each major choice |
+| [Contributing](CONTRIBUTING.md) | How to contribute |
+| [Changelog](CHANGELOG.md) | Release history |
+
 ## Design Philosophy
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the full architectural blueprint and
