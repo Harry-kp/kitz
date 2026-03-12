@@ -20,7 +20,7 @@ use crate::toast::{ToastManager, ToastWidget};
 use crate::widgets::Footer;
 
 pub fn run<A: Application>(mut app: A) -> Result<()> {
-    color_eyre::install()?;
+    let _ = color_eyre::install();
     let mut terminal = terminal::init()?;
 
     let mut should_quit = false;

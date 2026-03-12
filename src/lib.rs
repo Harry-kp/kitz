@@ -1,6 +1,7 @@
 pub mod app;
 pub mod command;
 pub mod context;
+pub mod error;
 pub mod logging;
 pub mod overlay;
 pub mod panel;

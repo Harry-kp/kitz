@@ -6,6 +6,8 @@
 
 pub use color_eyre::Result;
 pub use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+
+pub use crate::error::RataframeError;
 pub use ratatui::layout::{Constraint, Layout, Rect};
 pub use ratatui::widgets::Paragraph;
 pub use ratatui::Frame;
