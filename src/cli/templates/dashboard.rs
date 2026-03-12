@@ -10,7 +10,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rataframe = { version = "0.1", default-features = false }
+kitz = { version = "0.1", default-features = false }
 ratatui = "0.30"
 crossterm = "0.29"
 color-eyre = "0.6"
@@ -29,7 +29,7 @@ mod panels;
 use color_eyre::Result;
 
 fn main() -> Result<()> {
-    rataframe::run(app::App::new())
+    kitz::run(app::App::new())
 }
 "#,
         },
@@ -41,7 +41,7 @@ pub enum Msg {
     LogAppend(String),
     ChartTick,
     CycleTheme,
-    // rataframe:messages
+    // kitz:messages
 }
 "#,
         },
@@ -49,8 +49,8 @@ pub enum Msg {
             path: "src/app.rs",
             content: r#"use std::time::Duration;
 
-use rataframe::prelude::*;
-use rataframe::toast::ToastLevel;
+use kitz::prelude::*;
+use kitz::toast::ToastLevel;
 
 use crate::messages::Msg;
 use crate::panels;
@@ -59,8 +59,8 @@ pub struct App {
     pub stats: panels::stats::StatsPanel,
     pub chart: panels::chart::ChartPanel,
     pub log: panels::log::LogPanel,
-    // rataframe:app-fields
-    pub theme: rataframe::theme::Theme,
+    // kitz:app-fields
+    pub theme: kitz::theme::Theme,
 }
 
 impl App {
@@ -69,8 +69,8 @@ impl App {
             stats: panels::stats::StatsPanel::new(),
             chart: panels::chart::ChartPanel::new(),
             log: panels::log::LogPanel::new(),
-            // rataframe:app-init
-            theme: rataframe::theme::Theme::default(),
+            // kitz:app-init
+            theme: kitz::theme::Theme::default(),
         }
     }
 }
@@ -92,7 +92,7 @@ impl Application for App {
                 self.theme = self.theme.next();
                 ctx.toast(format!("Theme: {}", self.theme.name), ToastLevel::Success);
             }
-            // rataframe:update
+            // kitz:update
         }
         Command::none()
     }
@@ -102,7 +102,7 @@ impl Application for App {
             ("stats", Constraint::Percentage(25)),
             ("chart", Constraint::Percentage(50)),
             ("log", Constraint::Percentage(25)),
-            // rataframe:layout
+            // kitz:layout
         ])
     }
 
@@ -111,7 +111,7 @@ impl Application for App {
             "stats" => panels::stats::PANEL_TITLE,
             "chart" => panels::chart::PANEL_TITLE,
             "log" => panels::log::PANEL_TITLE,
-            // rataframe:panel-title
+            // kitz:panel-title
             _ => "",
         }
     }
@@ -122,7 +122,7 @@ impl Application for App {
             "stats" => self.stats.view(frame, area, focused, theme),
             "chart" => self.chart.view(frame, area, focused, theme),
             "log" => self.log.view(frame, area, focused, theme),
-            // rataframe:panel-view
+            // kitz:panel-view
             _ => {}
         }
     }
@@ -132,7 +132,7 @@ impl Application for App {
             "stats" => panels::stats::StatsPanel::key_hints(),
             "chart" => panels::chart::ChartPanel::key_hints(),
             "log" => panels::log::LogPanel::key_hints(),
-            // rataframe:panel-hints
+            // kitz:panel-hints
             _ => vec![],
         }
     }
@@ -143,7 +143,7 @@ impl Application for App {
         key: &crossterm::event::KeyEvent,
     ) -> EventResult<Msg> {
         match id {
-            // rataframe:panel-keys
+            // kitz:panel-keys
             _ => EventResult::Ignored,
         }
     }
@@ -163,7 +163,7 @@ impl Application for App {
         ]
     }
 
-    fn theme(&self) -> rataframe::theme::Theme {
+    fn theme(&self) -> kitz::theme::Theme {
         self.theme.clone()
     }
 
@@ -178,12 +178,12 @@ impl Application for App {
             content: r#"pub mod stats;
 pub mod chart;
 pub mod log;
-// rataframe:panel-mods
+// kitz:panel-mods
 "#,
         },
         TemplateFile {
             path: "src/panels/stats.rs",
-            content: r#"use rataframe::prelude::*;
+            content: r#"use kitz::prelude::*;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{List, ListItem};
@@ -207,7 +207,7 @@ impl StatsPanel {
         }
     }
 
-    pub fn view(&self, frame: &mut Frame, area: Rect, _focused: bool, theme: &rataframe::theme::Theme) {
+    pub fn view(&self, frame: &mut Frame, area: Rect, _focused: bool, theme: &kitz::theme::Theme) {
         let items: Vec<ListItem> = self
             .values
             .iter()
@@ -250,7 +250,7 @@ impl StatsPanel {
         },
         TemplateFile {
             path: "src/panels/chart.rs",
-            content: r#"use rataframe::prelude::*;
+            content: r#"use kitz::prelude::*;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -271,7 +271,7 @@ impl ChartPanel {
         }
     }
 
-    pub fn view(&self, frame: &mut Frame, area: Rect, _focused: bool, theme: &rataframe::theme::Theme) {
+    pub fn view(&self, frame: &mut Frame, area: Rect, _focused: bool, theme: &kitz::theme::Theme) {
         let max = *self.data_points.iter().max().unwrap_or(&1);
         let height = area.height.saturating_sub(1) as u64;
 
@@ -313,7 +313,7 @@ impl ChartPanel {
         },
         TemplateFile {
             path: "src/panels/log.rs",
-            content: r#"use rataframe::prelude::*;
+            content: r#"use kitz::prelude::*;
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -336,7 +336,7 @@ impl LogPanel {
         }
     }
 
-    pub fn view(&self, frame: &mut Frame, area: Rect, _focused: bool, theme: &rataframe::theme::Theme) {
+    pub fn view(&self, frame: &mut Frame, area: Rect, _focused: bool, theme: &kitz::theme::Theme) {
         let visible = area.height as usize;
         let start = self.entries.len().saturating_sub(visible);
         let lines: Vec<Line> = self.entries[start..]
@@ -361,8 +361,8 @@ impl LogPanel {
         },
         TemplateFile {
             path: "tests/app_test.rs",
-            content: r#"// TestHarness-based tests. Run with: rataframe test
-// rataframe:tests
+            content: r#"// TestHarness-based tests. Run with: kitz test
+// kitz:tests
 "#,
         },
     ]

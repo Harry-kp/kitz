@@ -3,8 +3,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use rataframe::prelude::*;
-use rataframe::toast::ToastLevel;
+use kitz::prelude::*;
+use kitz::toast::ToastLevel;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, Paragraph, Wrap};
@@ -19,7 +19,7 @@ struct App {
     entries: Vec<DirEntry>,
     selected: usize,
     preview: String,
-    current_theme: rataframe::theme::Theme,
+    current_theme: kitz::theme::Theme,
     show_hidden: bool,
 }
 
@@ -37,7 +37,7 @@ impl App {
             entries: Vec::new(),
             selected: 0,
             preview: String::new(),
-            current_theme: rataframe::theme::Theme::default(),
+            current_theme: kitz::theme::Theme::default(),
             show_hidden: false,
         };
         app.reload_entries();
@@ -331,12 +331,12 @@ impl Application for App {
         EventResult::Ignored
     }
 
-    fn theme(&self) -> rataframe::theme::Theme {
+    fn theme(&self) -> kitz::theme::Theme {
         self.current_theme.clone()
     }
 
     fn title(&self) -> &str {
-        "rataframe File Manager"
+        "kitz File Manager"
     }
 
     fn subscriptions(&self) -> Vec<Subscription<Msg>> {
@@ -349,5 +349,5 @@ impl Application for App {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App::new())
+    kitz::run(App::new())
 }

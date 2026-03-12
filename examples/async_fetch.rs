@@ -1,7 +1,7 @@
 use std::io::Read as _;
 use std::net::TcpStream;
 
-use rataframe::prelude::*;
+use kitz::prelude::*;
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -145,7 +145,7 @@ fn fetch_httpbin() -> Result<String, String> {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App {
+    kitz::run(App {
         state: FetchState::Idle,
     })
 }

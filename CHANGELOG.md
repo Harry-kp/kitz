@@ -9,15 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **CLI tooling**: `cargo install rataframe` provides the `rataframe` CLI binary.
-- **`rataframe new <name>`**: Scaffold new projects from 4 built-in templates (minimal, panels, dashboard, editor).
-- **`rataframe generate panel <name>`**: Generate a panel and auto-wire it into mod.rs, messages.rs, app.rs, and tests.
-- **`rataframe generate screen <name>`**: Generate a screen with navigation wiring.
-- **`rataframe generate overlay <name>`**: Generate an overlay with full `Overlay` trait implementation.
-- **`rataframe dev`**: Auto-reload development mode via `cargo-watch`.
-- **`rataframe run`** / **`rataframe test`**: Convenience wrappers for cargo commands.
-- **`rataframe theme list`** / **`rataframe theme preview`**: Browse built-in themes with ANSI color swatches.
-- **Marker comment system**: Generated projects use `// rataframe:X` markers as stable injection points for code generation.
+- **CLI tooling**: `cargo install kitz` provides the `kitz` CLI binary.
+- **`kitz new <name>`**: Scaffold new projects from 4 built-in templates (minimal, panels, dashboard, editor).
+- **`kitz generate panel <name>`**: Generate a panel and auto-wire it into mod.rs, messages.rs, app.rs, and tests.
+- **`kitz generate screen <name>`**: Generate a screen with navigation wiring.
+- **`kitz generate overlay <name>`**: Generate an overlay with full `Overlay` trait implementation.
+- **`kitz dev`**: Auto-reload development mode via `cargo-watch`.
+- **`kitz run`** / **`kitz test`**: Convenience wrappers for cargo commands.
+- **`kitz theme list`** / **`kitz theme preview`**: Browse built-in themes with ANSI color swatches.
+- **Marker comment system**: Generated projects use `// kitz:X` markers as stable injection points for code generation.
 - **Convention structure**: Opinionated project layout (src/app.rs, src/messages.rs, src/panels/, src/screens/, src/overlays/).
 - **24 CLI integration tests** covering project scaffolding, code generation, and template substitution.
 

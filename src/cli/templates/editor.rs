@@ -10,7 +10,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rataframe = { version = "0.1", default-features = false }
+kitz = { version = "0.1", default-features = false }
 ratatui = "0.30"
 crossterm = "0.29"
 color-eyre = "0.6"
@@ -22,7 +22,7 @@ color-eyre = "0.6"
         },
         TemplateFile {
             path: "src/main.rs",
-            content: r#"use rataframe::prelude::*;
+            content: r#"use kitz::prelude::*;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -183,7 +183,7 @@ impl Application for App {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App::new())
+    kitz::run(App::new())
 }
 "#,
         },

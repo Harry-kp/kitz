@@ -1,10 +1,10 @@
-# rataframe — Architecture & Design Plan
+# kitz — Architecture & Design Plan
 
 > The application framework for ratatui.
 
 ## Design Philosophy
 
-**"rataframe is to ratatui what Next.js is to React"**
+**"kitz is to ratatui what Next.js is to React"**
 
 Strong conventions as the happy path. Clean escape hatches when conventions don't fit.
 
@@ -65,7 +65,7 @@ pub trait Application: Sized + 'static {
     fn subscriptions(&self) -> Vec<Subscription<Self::Message>> { vec![] }
 
     // Metadata
-    fn title(&self) -> &str { "rataframe app" }
+    fn title(&self) -> &str { "kitz app" }
     fn tick_rate(&self) -> Duration { Duration::from_millis(250) }
     fn theme(&self) -> Theme { Theme::default() }
 }

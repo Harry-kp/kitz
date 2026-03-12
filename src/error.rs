@@ -1,9 +1,9 @@
 use std::fmt;
 use std::io;
 
-/// All errors produced by the rataframe runtime.
+/// All errors produced by the kitz runtime.
 #[derive(Debug)]
-pub enum RataframeError {
+pub enum KitzError {
     /// Terminal initialization or restoration failed.
     Terminal(io::Error),
     /// Event polling or reading failed.
@@ -14,7 +14,7 @@ pub enum RataframeError {
     Setup(String),
 }
 
-impl fmt::Display for RataframeError {
+impl fmt::Display for KitzError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Terminal(e) => write!(
@@ -29,7 +29,7 @@ impl fmt::Display for RataframeError {
     }
 }
 
-impl std::error::Error for RataframeError {
+impl std::error::Error for KitzError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Terminal(e) | Self::Event(e) | Self::Render(e) => Some(e),
@@ -38,11 +38,11 @@ impl std::error::Error for RataframeError {
     }
 }
 
-impl From<io::Error> for RataframeError {
+impl From<io::Error> for KitzError {
     fn from(e: io::Error) -> Self {
         Self::Terminal(e)
     }
 }
 
-/// Convenience type alias for rataframe results.
-pub type Result<T> = std::result::Result<T, RataframeError>;
+/// Convenience type alias for kitz results.
+pub type Result<T> = std::result::Result<T, KitzError>;

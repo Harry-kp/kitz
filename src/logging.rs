@@ -7,10 +7,10 @@ use tracing_subscriber::prelude::*;
 /// Initialise TUI-safe file logging.
 ///
 /// Returns a guard that must be held for the lifetime of the application
-/// (dropping it flushes pending log writes). Logs go to `~/.local/share/rataframe/`
+/// (dropping it flushes pending log writes). Logs go to `~/.local/share/kitz/`
 /// or a custom directory.
 ///
-/// Call this before `rataframe::run()` if you want structured logging.
+/// Call this before `kitz::run()` if you want structured logging.
 /// The runtime does NOT call this automatically — it's opt-in to avoid
 /// creating files for simple examples.
 pub fn init_logging(app_name: &str) -> Option<WorkerGuard> {
@@ -35,9 +35,9 @@ pub fn init_logging(app_name: &str) -> Option<WorkerGuard> {
 
 fn log_directory(app_name: &str) -> PathBuf {
     if let Some(data_dir) = dirs_fallback() {
-        data_dir.join("rataframe").join(app_name)
+        data_dir.join("kitz").join(app_name)
     } else {
-        PathBuf::from(".").join(".rataframe-logs")
+        PathBuf::from(".").join(".kitz-logs")
     }
 }
 

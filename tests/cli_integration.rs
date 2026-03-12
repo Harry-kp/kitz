@@ -4,16 +4,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn rataframe_bin() -> PathBuf {
+fn kitz_bin() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("target");
     path.push("debug");
-    path.push("rataframe");
+    path.push("kitz");
     path
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("rataframe_test_{}", name));
+    let dir = std::env::temp_dir().join(format!("kitz_test_{}", name));
     if dir.exists() {
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -21,27 +21,27 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
-fn run_rataframe(args: &[&str], cwd: &Path) -> (bool, String, String) {
-    let output = Command::new(rataframe_bin())
+fn run_kitz(args: &[&str], cwd: &Path) -> (bool, String, String) {
+    let output = Command::new(kitz_bin())
         .args(args)
         .current_dir(cwd)
         .output()
-        .expect("Failed to execute rataframe");
+        .expect("Failed to execute kitz");
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     (output.status.success(), stdout, stderr)
 }
 
-// ── rataframe new ──────────────────────────────────────────
+// ── kitz new ──────────────────────────────────────────
 
 #[test]
 fn new_creates_project_with_default_template() {
     let dir = temp_dir("new_default");
-    let (ok, stdout, _) = run_rataframe(&["new", "testproject"], &dir);
+    let (ok, stdout, _) = run_kitz(&["new", "testproject"], &dir);
 
-    assert!(ok, "rataframe new should succeed");
-    assert!(stdout.contains("Creating new rataframe project"));
+    assert!(ok, "kitz new should succeed");
+    assert!(stdout.contains("Creating new kitz project"));
 
     let project = dir.join("testproject");
     assert!(project.join("Cargo.toml").exists());
@@ -58,7 +58,7 @@ fn new_creates_project_with_default_template() {
 #[test]
 fn new_creates_minimal_project() {
     let dir = temp_dir("new_minimal");
-    let (ok, _, _) = run_rataframe(&["new", "minapp", "--template", "minimal"], &dir);
+    let (ok, _, _) = run_kitz(&["new", "minapp", "--template", "minimal"], &dir);
 
     assert!(ok);
 
@@ -72,7 +72,7 @@ fn new_creates_minimal_project() {
 #[test]
 fn new_creates_dashboard_project() {
     let dir = temp_dir("new_dashboard");
-    let (ok, _, _) = run_rataframe(&["new", "dashapp", "--template", "dashboard"], &dir);
+    let (ok, _, _) = run_kitz(&["new", "dashapp", "--template", "dashboard"], &dir);
 
     assert!(ok);
 
@@ -85,7 +85,7 @@ fn new_creates_dashboard_project() {
 #[test]
 fn new_creates_editor_project() {
     let dir = temp_dir("new_editor");
-    let (ok, _, _) = run_rataframe(&["new", "edapp", "--template", "editor"], &dir);
+    let (ok, _, _) = run_kitz(&["new", "edapp", "--template", "editor"], &dir);
 
     assert!(ok);
 
@@ -103,21 +103,21 @@ fn new_fails_on_existing_directory() {
     let dir = temp_dir("new_exists");
     fs::create_dir_all(dir.join("existing")).unwrap();
 
-    let (ok, _, _) = run_rataframe(&["new", "existing"], &dir);
+    let (ok, _, _) = run_kitz(&["new", "existing"], &dir);
     assert!(!ok);
 }
 
 #[test]
 fn new_fails_on_unknown_template() {
     let dir = temp_dir("new_unknown_tpl");
-    let (ok, _, _) = run_rataframe(&["new", "proj", "--template", "nonexistent"], &dir);
+    let (ok, _, _) = run_kitz(&["new", "proj", "--template", "nonexistent"], &dir);
     assert!(!ok);
 }
 
 #[test]
 fn new_applies_name_substitution() {
     let dir = temp_dir("new_substitution");
-    let (ok, _, _) = run_rataframe(&["new", "my-cool-app", "--template", "panels"], &dir);
+    let (ok, _, _) = run_kitz(&["new", "my-cool-app", "--template", "panels"], &dir);
 
     assert!(ok);
 
@@ -129,11 +129,11 @@ fn new_applies_name_substitution() {
     assert!(app.contains("\"my-cool-app\""));
 }
 
-// ── rataframe generate panel ────────────────────────────────
+// ── kitz generate panel ────────────────────────────────
 
 fn setup_panels_project(test_name: &str) -> PathBuf {
     let dir = temp_dir(test_name);
-    let (ok, _, _) = run_rataframe(&["new", "gentest", "--template", "panels"], &dir);
+    let (ok, _, _) = run_kitz(&["new", "gentest", "--template", "panels"], &dir);
     assert!(ok, "project setup failed");
     dir.join("gentest")
 }
@@ -142,7 +142,7 @@ fn setup_panels_project(test_name: &str) -> PathBuf {
 fn generate_panel_creates_files() {
     let project = setup_panels_project("gen_panel_files");
 
-    let (ok, stdout, _) = run_rataframe(&["generate", "panel", "stats"], &project);
+    let (ok, stdout, _) = run_kitz(&["generate", "panel", "stats"], &project);
     assert!(ok, "generate panel should succeed");
     assert!(stdout.contains("Panel 'stats' generated"));
 
@@ -157,7 +157,7 @@ fn generate_panel_creates_files() {
 fn generate_panel_wires_into_mod() {
     let project = setup_panels_project("gen_panel_mod");
 
-    run_rataframe(&["generate", "panel", "network"], &project);
+    run_kitz(&["generate", "panel", "network"], &project);
 
     let mod_rs = fs::read_to_string(project.join("src/panels/mod.rs")).unwrap();
     assert!(mod_rs.contains("pub mod network;"));
@@ -167,7 +167,7 @@ fn generate_panel_wires_into_mod() {
 fn generate_panel_adds_message_variants() {
     let project = setup_panels_project("gen_panel_msgs");
 
-    run_rataframe(&["generate", "panel", "activity"], &project);
+    run_kitz(&["generate", "panel", "activity"], &project);
 
     let messages = fs::read_to_string(project.join("src/messages.rs")).unwrap();
     assert!(messages.contains("ActivityNext,"));
@@ -178,7 +178,7 @@ fn generate_panel_adds_message_variants() {
 fn generate_panel_wires_into_app() {
     let project = setup_panels_project("gen_panel_app");
 
-    run_rataframe(&["generate", "panel", "files"], &project);
+    run_kitz(&["generate", "panel", "files"], &project);
 
     let app = fs::read_to_string(project.join("src/app.rs")).unwrap();
     assert!(app.contains("pub files: panels::files::FilesPanel,"));
@@ -191,10 +191,10 @@ fn generate_panel_wires_into_app() {
 fn generate_panel_fails_on_duplicate() {
     let project = setup_panels_project("gen_panel_dup");
 
-    let (ok1, _, _) = run_rataframe(&["generate", "panel", "logs"], &project);
+    let (ok1, _, _) = run_kitz(&["generate", "panel", "logs"], &project);
     assert!(ok1);
 
-    let (ok2, _, _) = run_rataframe(&["generate", "panel", "logs"], &project);
+    let (ok2, _, _) = run_kitz(&["generate", "panel", "logs"], &project);
     assert!(!ok2, "duplicate panel should fail");
 }
 
@@ -202,20 +202,20 @@ fn generate_panel_fails_on_duplicate() {
 fn generate_panel_validates_name() {
     let project = setup_panels_project("gen_panel_name");
 
-    let (ok, _, _) = run_rataframe(&["generate", "panel", "BadName"], &project);
+    let (ok, _, _) = run_kitz(&["generate", "panel", "BadName"], &project);
     assert!(!ok, "PascalCase name should be rejected");
 
-    let (ok2, _, _) = run_rataframe(&["generate", "panel", "has-dash"], &project);
+    let (ok2, _, _) = run_kitz(&["generate", "panel", "has-dash"], &project);
     assert!(!ok2, "kebab-case name should be rejected");
 }
 
-// ── rataframe generate screen ────────────────────────────────
+// ── kitz generate screen ────────────────────────────────
 
 #[test]
 fn generate_screen_creates_files() {
     let project = setup_panels_project("gen_screen");
 
-    let (ok, stdout, _) = run_rataframe(&["generate", "screen", "settings"], &project);
+    let (ok, stdout, _) = run_kitz(&["generate", "screen", "settings"], &project);
     assert!(ok, "generate screen should succeed");
     assert!(stdout.contains("Screen 'settings' generated"));
 
@@ -231,7 +231,7 @@ fn generate_screen_creates_files() {
 fn generate_screen_adds_mod_to_main() {
     let project = setup_panels_project("gen_screen_main");
 
-    run_rataframe(&["generate", "screen", "detail_view"], &project);
+    run_kitz(&["generate", "screen", "detail_view"], &project);
 
     let main = fs::read_to_string(project.join("src/main.rs")).unwrap();
     assert!(main.contains("mod screens;"));
@@ -241,7 +241,7 @@ fn generate_screen_adds_mod_to_main() {
 fn generate_screen_adds_message_and_update() {
     let project = setup_panels_project("gen_screen_msg");
 
-    run_rataframe(&["generate", "screen", "profile"], &project);
+    run_kitz(&["generate", "screen", "profile"], &project);
 
     let messages = fs::read_to_string(project.join("src/messages.rs")).unwrap();
     assert!(messages.contains("PushProfileScreen,"));
@@ -251,13 +251,13 @@ fn generate_screen_adds_message_and_update() {
     assert!(app.contains("screens::profile::ProfileScreen::new()"));
 }
 
-// ── rataframe generate overlay ────────────────────────────────
+// ── kitz generate overlay ────────────────────────────────
 
 #[test]
 fn generate_overlay_creates_files() {
     let project = setup_panels_project("gen_overlay");
 
-    let (ok, stdout, _) = run_rataframe(&["generate", "overlay", "confirm_delete"], &project);
+    let (ok, stdout, _) = run_kitz(&["generate", "overlay", "confirm_delete"], &project);
     assert!(ok, "generate overlay should succeed");
     assert!(stdout.contains("Overlay 'confirm_delete' generated"));
 
@@ -273,7 +273,7 @@ fn generate_overlay_creates_files() {
 fn generate_overlay_adds_mod_to_main() {
     let project = setup_panels_project("gen_overlay_main");
 
-    run_rataframe(&["generate", "overlay", "search"], &project);
+    run_kitz(&["generate", "overlay", "search"], &project);
 
     let main = fs::read_to_string(project.join("src/main.rs")).unwrap();
     assert!(main.contains("mod overlays;"));
@@ -284,7 +284,7 @@ fn generate_overlay_adds_mod_to_main() {
 #[test]
 fn template_substitution_handles_underscored_names() {
     let dir = temp_dir("subst_underscore");
-    let (ok, _, _) = run_rataframe(&["new", "my_project", "--template", "panels"], &dir);
+    let (ok, _, _) = run_kitz(&["new", "my_project", "--template", "panels"], &dir);
 
     assert!(ok);
 
@@ -298,7 +298,7 @@ fn template_substitution_handles_underscored_names() {
 #[test]
 fn cli_shows_help() {
     let dir = temp_dir("help");
-    let (ok, stdout, _) = run_rataframe(&["--help"], &dir);
+    let (ok, stdout, _) = run_kitz(&["--help"], &dir);
 
     assert!(ok);
     assert!(stdout.contains("terminal user interfaces"));
@@ -312,17 +312,17 @@ fn cli_shows_help() {
 #[test]
 fn cli_shows_version() {
     let dir = temp_dir("version");
-    let (ok, stdout, _) = run_rataframe(&["--version"], &dir);
+    let (ok, stdout, _) = run_kitz(&["--version"], &dir);
 
     assert!(ok);
-    assert!(stdout.contains("rataframe"));
+    assert!(stdout.contains("kitz"));
 }
 
 // ── Generator helpers unit tests ────────────────────────────
 
 #[test]
 fn template_to_snake_case() {
-    use rataframe::cli::templates::to_snake_case;
+    use kitz::cli::templates::to_snake_case;
 
     assert_eq!(to_snake_case("my-project"), "my_project");
     assert_eq!(to_snake_case("MyProject"), "myproject");
@@ -331,7 +331,7 @@ fn template_to_snake_case() {
 
 #[test]
 fn template_to_pascal_case() {
-    use rataframe::cli::templates::to_pascal_case;
+    use kitz::cli::templates::to_pascal_case;
 
     assert_eq!(to_pascal_case("my_project"), "MyProject");
     assert_eq!(to_pascal_case("hello-world"), "HelloWorld");
@@ -340,7 +340,7 @@ fn template_to_pascal_case() {
 
 #[test]
 fn template_to_kebab_case() {
-    use rataframe::cli::templates::to_kebab_case;
+    use kitz::cli::templates::to_kebab_case;
 
     assert_eq!(to_kebab_case("my_project"), "my-project");
     assert_eq!(to_kebab_case("hello world"), "hello-world");

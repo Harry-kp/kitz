@@ -1,13 +1,13 @@
 [package]
-name = "rataframe"
+name = "kitz"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 authors = ["Harry-kp"]
 description = "The application framework for ratatui — convention-driven panels, overlays, themes, and TEA architecture"
-documentation = "https://docs.rs/rataframe"
-homepage = "https://github.com/Harry-kp/rataframe"
-repository = "https://github.com/Harry-kp/rataframe"
+documentation = "https://docs.rs/kitz"
+homepage = "https://github.com/Harry-kp/kitz"
+repository = "https://github.com/Harry-kp/kitz"
 license = "MIT"
 readme = "README.md"
 keywords = ["tui", "ratatui", "framework", "terminal", "tea"]
@@ -47,7 +47,7 @@ optional = true
 tokio = { version = "1", features = ["full"] }
 
 [[bin]]
-name = "rataframe"
+name = "kitz"
 path = "src/cli/main.rs"
 required-features = ["cli"]
 

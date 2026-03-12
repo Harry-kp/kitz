@@ -4,7 +4,7 @@ use crate::app::{Application, EventResult};
 use crate::command::Action;
 use crate::context::Context;
 
-/// A test harness for rataframe applications.
+/// A test harness for kitz applications.
 ///
 /// Allows simulating key presses and messages, then asserting on app state.
 /// No actual terminal is needed — all rendering is skipped.

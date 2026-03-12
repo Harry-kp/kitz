@@ -1,5 +1,5 @@
-use rataframe::prelude::*;
-use rataframe::theme::palettes;
+use kitz::prelude::*;
+use kitz::theme::palettes;
 use ratatui::layout::{Alignment, Direction};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -108,5 +108,5 @@ fn render_theme_column(frame: &mut Frame, area: ratatui::layout::Rect, theme: &T
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App)
+    kitz::run(App)
 }

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use colored::Colorize;
 
-/// Find the project root by looking for Cargo.toml with a rataframe dependency.
+/// Find the project root by looking for Cargo.toml with a kitz dependency.
 pub fn find_project_root() -> Result<PathBuf, String> {
     let mut dir = std::env::current_dir().map_err(|e| format!("Cannot get current dir: {}", e))?;
 
@@ -12,12 +12,12 @@ pub fn find_project_root() -> Result<PathBuf, String> {
         if cargo_toml.exists() {
             let content = fs::read_to_string(&cargo_toml)
                 .map_err(|e| format!("Cannot read Cargo.toml: {}", e))?;
-            if content.contains("rataframe") {
+            if content.contains("kitz") {
                 return Ok(dir);
             }
         }
         if !dir.pop() {
-            return Err("Not inside a rataframe project. Run `rataframe new <name>` first.".into());
+            return Err("Not inside a kitz project. Run `kitz new <name>` first.".into());
         }
     }
 }
@@ -126,7 +126,7 @@ pub fn count_existing_panels(project_root: &Path) -> usize {
             .lines()
             .filter(|line| {
                 let trimmed = line.trim();
-                trimmed.starts_with("pub mod ") && !trimmed.contains("rataframe:")
+                trimmed.starts_with("pub mod ") && !trimmed.contains("kitz:")
             })
             .count()
     } else {

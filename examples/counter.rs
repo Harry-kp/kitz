@@ -1,4 +1,4 @@
-use rataframe::prelude::*;
+use kitz::prelude::*;
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
 use ratatui::text::Line;
@@ -62,5 +62,5 @@ impl Application for App {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App { count: 0 })
+    kitz::run(App { count: 0 })
 }

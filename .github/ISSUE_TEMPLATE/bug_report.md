@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug in rataframe
+about: Report a bug in kitz
 title: "[Bug] "
 labels: bug
 ---
@@ -28,4 +28,4 @@ What actually happened.
 - OS:
 - Terminal:
 - Rust version:
-- rataframe version:
+- kitz version:

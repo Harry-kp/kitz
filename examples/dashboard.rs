@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use rataframe::prelude::*;
+use kitz::prelude::*;
 use ratatui::layout::Direction;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -212,5 +212,5 @@ fn simulated_mem(tick: u64) -> u64 {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App::new())
+    kitz::run(App::new())
 }

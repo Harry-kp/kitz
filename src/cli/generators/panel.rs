@@ -30,11 +30,8 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
     // 2. Wire into panels/mod.rs
     let mod_path = panels_dir.join("mod.rs");
     if mod_path.exists() {
-        let inserted = insert_above_marker(
-            &mod_path,
-            "rataframe:panel-mods",
-            &format!("pub mod {};", name),
-        )?;
+        let inserted =
+            insert_above_marker(&mod_path, "kitz:panel-mods", &format!("pub mod {};", name))?;
         if inserted {
             print_modified("src/panels/mod.rs", &format!("added: pub mod {}", name));
         } else {
@@ -51,7 +48,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
     let messages_path = project_root.join("src/messages.rs");
     if messages_path.exists() {
         let msg_lines = format!("{}Next,\n{}Prev,", pascal, pascal);
-        let inserted = insert_above_marker(&messages_path, "rataframe:messages", &msg_lines)?;
+        let inserted = insert_above_marker(&messages_path, "kitz:messages", &msg_lines)?;
         if inserted {
             print_modified(
                 "src/messages.rs",
@@ -66,7 +63,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
         // App field
         insert_above_marker(
             &app_path,
-            "rataframe:app-fields",
+            "kitz:app-fields",
             &format!("pub {}: panels::{}::{}Panel,", name, name, pascal),
         )?;
         print_modified("src/app.rs", &format!("added: {} field", name));
@@ -74,14 +71,14 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
         // App init
         insert_above_marker(
             &app_path,
-            "rataframe:app-init",
+            "kitz:app-init",
             &format!("{}: panels::{}::{}Panel::new(),", name, name, pascal),
         )?;
 
         // Update match arm
         insert_above_marker(
             &app_path,
-            "rataframe:update",
+            "kitz:update",
             &format!(
                 "Msg::{}Next => self.{}.select_next(),\nMsg::{}Prev => self.{}.select_prev(),",
                 pascal, name, pascal, name
@@ -97,7 +94,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
         let pct = even_percentage(existing_count);
         insert_above_marker(
             &app_path,
-            "rataframe:layout",
+            "kitz:layout",
             &format!("(\"{}\", Constraint::Percentage({})),", name, pct),
         )?;
         print_modified("src/app.rs", &format!("added: \"{}\" to PanelLayout", name));
@@ -105,14 +102,14 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
         // Panel title
         insert_above_marker(
             &app_path,
-            "rataframe:panel-title",
+            "kitz:panel-title",
             &format!("\"{}\" => panels::{}::PANEL_TITLE,", name, name),
         )?;
 
         // Panel view
         insert_above_marker(
             &app_path,
-            "rataframe:panel-view",
+            "kitz:panel-view",
             &format!(
                 "\"{}\" => self.{}.view(frame, area, focused, theme),",
                 name, name
@@ -122,7 +119,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
         // Panel hints
         insert_above_marker(
             &app_path,
-            "rataframe:panel-hints",
+            "kitz:panel-hints",
             &format!(
                 "\"{}\" => panels::{}::{}Panel::key_hints(),",
                 name, name, pascal
@@ -132,7 +129,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
         // Panel keys
         insert_above_marker(
             &app_path,
-            "rataframe:panel-keys",
+            "kitz:panel-keys",
             &format!(
                 "\"{}\" => match key.code {{\n    KeyCode::Char('j') | KeyCode::Down => EventResult::Message(Msg::{}Next),\n    KeyCode::Char('k') | KeyCode::Up => EventResult::Message(Msg::{}Prev),\n    _ => EventResult::Ignored,\n}},",
                 name, pascal, pascal
@@ -149,7 +146,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
     if test_path.exists() {
         insert_above_marker(
             &test_path,
-            "rataframe:tests",
+            "kitz:tests",
             &format!(
                 "#[test]\nfn test_{}_exists() {{\n    // TODO: Add TestHarness tests for the {} panel\n    assert!(true);\n}}",
                 name, name
@@ -163,7 +160,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
 
 fn generate_panel_file(name: &str, pascal: &str) -> String {
     format!(
-        r#"use rataframe::prelude::*;
+        r#"use kitz::prelude::*;
 use ratatui::style::{{Modifier, Style}};
 use ratatui::text::Line;
 use ratatui::widgets::{{List, ListItem}};
@@ -188,7 +185,7 @@ impl {}Panel {{
         }}
     }}
 
-    pub fn view(&self, frame: &mut Frame, area: Rect, _focused: bool, theme: &rataframe::theme::Theme) {{
+    pub fn view(&self, frame: &mut Frame, area: Rect, _focused: bool, theme: &kitz::theme::Theme) {{
         let items: Vec<ListItem> = self
             .items
             .iter()

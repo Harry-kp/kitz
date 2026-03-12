@@ -1,12 +1,12 @@
-# Contributing to rataframe
+# Contributing to kitz
 
 Thank you for considering contributing! Here's how to get started.
 
 ## Setup
 
 ```bash
-git clone https://github.com/Harry-kp/rataframe.git
-cd rataframe
+git clone https://github.com/Harry-kp/kitz.git
+cd kitz
 cargo build
 cargo test
 cargo run --example counter  # verify everything works

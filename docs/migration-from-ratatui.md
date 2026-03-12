@@ -1,12 +1,12 @@
-# Migrating from raw ratatui to rataframe
+# Migrating from raw ratatui to kitz
 
-This guide walks through replacing hand-rolled ratatui boilerplate with rataframe equivalents. Each section shows a **before** (raw ratatui) and **after** (rataframe) snippet.
+This guide walks through replacing hand-rolled ratatui boilerplate with kitz equivalents. Each section shows a **before** (raw ratatui) and **after** (kitz) snippet.
 
 ---
 
 ## What you get for free
 
-When you adopt rataframe, you can delete code that handles:
+When you adopt kitz, you can delete code that handles:
 
 - Terminal init/restore with panic-safe cleanup
 - The event loop (poll, read, dispatch, render)
@@ -28,7 +28,7 @@ When you adopt rataframe, you can delete code that handles:
 
 ### Path 1 — Minimal
 
-Implement `update()` + `view()`. Replace your manual terminal setup and event loop with `rataframe::run(app)`. You keep full rendering control.
+Implement `update()` + `view()`. Replace your manual terminal setup and event loop with `kitz::run(app)`. You keep full rendering control.
 
 ### Path 2 — Convention (recommended for most apps)
 
@@ -42,7 +42,7 @@ Override `view()` entirely — you render with `Frame` directly, but still get t
 
 ## Migration patterns
 
-### 1. Terminal init/restore → `rataframe::run()`
+### 1. Terminal init/restore → `kitz::run()`
 
 **Before** — you manage raw mode, alternate screen, panic hooks:
 
@@ -74,7 +74,7 @@ fn main() -> Result<()> {
 
 ```rust
 fn main() -> color_eyre::Result<()> {
-    rataframe::run(MyApp::new())
+    kitz::run(MyApp::new())
 }
 ```
 
@@ -457,9 +457,9 @@ fn test_quit() {
 
 ## What changes conceptually
 
-| Raw ratatui | rataframe |
+| Raw ratatui | kitz |
 |---|---|
-| You call `enable_raw_mode()` / `disable_raw_mode()` | `rataframe::run()` handles terminal lifecycle |
+| You call `enable_raw_mode()` / `disable_raw_mode()` | `kitz::run()` handles terminal lifecycle |
 | You write the event loop | The runtime owns the loop; you declare behavior |
 | State mutations happen inline in key handlers | `handle_event` returns `EventResult::Message`, `update` handles state changes |
 | Side effects (HTTP, file I/O) happen directly | Return `Command::perform` — the runtime executes it and dispatches the result |
@@ -477,11 +477,11 @@ fn test_quit() {
 
 ## Step-by-step checklist
 
-1. **Add the dependency**: `cargo add rataframe`
+1. **Add the dependency**: `cargo add kitz`
 2. **Define your `Message` enum**: every action your app can take becomes a variant
 3. **Implement `Application`**: move rendering into `view()` or `panel_view()`, move state changes into `update()`
 4. **Delete terminal setup**: remove `enable_raw_mode`, `EnterAlternateScreen`, panic hooks, `disable_raw_mode`, `LeaveAlternateScreen`
-5. **Delete your event loop**: replace with `rataframe::run(app)` in `main()`
+5. **Delete your event loop**: replace with `kitz::run(app)` in `main()`
 6. **Delete convention key handling**: `q`, `Esc`, `Ctrl+C` are free; remove your match arms for them
 7. **Replace `Layout::split`** with `PanelLayout` (if using convention path)
 8. **Add `panel_key_hints()`**: the footer and help overlay auto-populate
@@ -494,7 +494,7 @@ fn test_quit() {
 ## Minimal complete example
 
 ```rust
-use rataframe::prelude::*;
+use kitz::prelude::*;
 
 struct Counter {
     count: i32,
@@ -538,7 +538,7 @@ impl Application for Counter {
 }
 
 fn main() -> color_eyre::Result<()> {
-    rataframe::run(Counter { count: 0 })
+    kitz::run(Counter { count: 0 })
 }
 ```
 

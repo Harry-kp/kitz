@@ -25,7 +25,7 @@ pub enum EventResult<M> {
     Consumed,
 }
 
-/// The core trait every rataframe application implements.
+/// The core trait every kitz application implements.
 ///
 /// Only [`update`](Application::update) is required. Every other method has a
 /// sensible default so you can progressively opt in to more framework features.
@@ -50,7 +50,7 @@ pub trait Application: Sized + 'static {
     fn view(&self, frame: &mut Frame, _ctx: &ViewContext) {
         use ratatui::widgets::Paragraph;
         frame.render_widget(
-            Paragraph::new("rataframe app — override view() or implement panels()"),
+            Paragraph::new("kitz app — override view() or implement panels()"),
             frame.area(),
         );
     }
@@ -106,7 +106,7 @@ pub trait Application: Sized + 'static {
 
     /// Display title for the terminal window.
     fn title(&self) -> &str {
-        "rataframe app"
+        "kitz app"
     }
 
     /// How often the runtime polls for events.

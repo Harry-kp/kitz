@@ -1,4 +1,4 @@
-use rataframe::cli;
+use kitz::cli;
 
 fn main() {
     cli::run();

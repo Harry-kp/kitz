@@ -1,4 +1,4 @@
-use rataframe::prelude::*;
+use kitz::prelude::*;
 
 struct App;
 
@@ -11,7 +11,7 @@ impl Application for App {
 
     fn view(&self, frame: &mut Frame, _ctx: &ViewContext) {
         frame.render_widget(
-            Paragraph::new("Hello, rataframe! Press any key to quit."),
+            Paragraph::new("Hello, kitz! Press any key to quit."),
             frame.area(),
         );
     }
@@ -22,5 +22,5 @@ impl Application for App {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App)
+    kitz::run(App)
 }

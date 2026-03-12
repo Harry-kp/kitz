@@ -1,4 +1,4 @@
-use rataframe::prelude::*;
+use kitz::prelude::*;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, Paragraph};
@@ -28,7 +28,7 @@ impl TodoApp {
         Self {
             todos: vec![
                 Todo {
-                    title: "Learn rataframe".into(),
+                    title: "Learn kitz".into(),
                     done: false,
                 },
                 Todo {
@@ -214,5 +214,5 @@ impl Application for TodoApp {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(TodoApp::new())
+    kitz::run(TodoApp::new())
 }

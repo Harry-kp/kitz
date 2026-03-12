@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature for rataframe
+about: Suggest a new feature for kitz
 title: "[Feature] "
 labels: enhancement
 ---

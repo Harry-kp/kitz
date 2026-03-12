@@ -1,6 +1,6 @@
-# Getting Started with rataframe
+# Getting Started with kitz
 
-rataframe is an application framework for [ratatui](https://ratatui.rs).
+kitz is an application framework for [ratatui](https://ratatui.rs).
 It handles the terminal lifecycle, event loop, panel layout, overlays, toasts,
 and convention key-bindings so you can focus on your app's state and views.
 
@@ -10,11 +10,11 @@ This guide takes you from zero to a working two-panel app in three steps.
 
 ## Step 1 — Project Setup
 
-The fastest way to start is with the rataframe CLI:
+The fastest way to start is with the kitz CLI:
 
 ```bash
-cargo install rataframe
-rataframe new my-tui
+cargo install kitz
+kitz new my-tui
 cd my-tui
 cargo run
 ```
@@ -23,14 +23,14 @@ This scaffolds a fully working two-panel app with sidebar, detail view, and
 all framework conventions wired up.
 
 **Alternative (manual setup):** If you prefer to set up a project yourself,
-add rataframe to your `Cargo.toml`:
+add kitz to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rataframe = { version = "0.1", default-features = false }
+kitz = { version = "0.1", default-features = false }
 ```
 
-rataframe re-exports `ratatui`, `crossterm`, and `color_eyre` through its
+kitz re-exports `ratatui`, `crossterm`, and `color_eyre` through its
 prelude — you don't need to add them yourself.
 
 ---
@@ -40,7 +40,7 @@ prelude — you don't need to add them yourself.
 Replace `src/main.rs` with:
 
 ```rust
-use rataframe::prelude::*;
+use kitz::prelude::*;
 
 struct App;
 
@@ -53,7 +53,7 @@ impl Application for App {
 
     fn view(&self, frame: &mut Frame, _ctx: &ViewContext) {
         frame.render_widget(
-            Paragraph::new("Hello, rataframe! Press any key to quit."),
+            Paragraph::new("Hello, kitz! Press any key to quit."),
             frame.area(),
         );
     }
@@ -64,7 +64,7 @@ impl Application for App {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App)
+    kitz::run(App)
 }
 ```
 
@@ -72,12 +72,12 @@ fn main() -> Result<()> {
 
 **What's happening:**
 
-- `use rataframe::prelude::*` imports `Application`, `Command`, `Context`,
+- `use kitz::prelude::*` imports `Application`, `Command`, `Context`,
   `Frame`, `Paragraph`, `Event`, `EventResult`, `Result`, and everything else
   you'll need.
 - `Application` is the core trait. Only `update()` is required — `view()`,
   `handle_event()`, and everything else have defaults.
-- `rataframe::run(App)` initialises the terminal, enters the event loop, and
+- `kitz::run(App)` initialises the terminal, enters the event loop, and
   restores the terminal on exit (even on panic).
 - `handle_event` maps raw terminal events to messages. Returning
   `EventResult::Message(())` dispatches `()` to `update()`, which returns
@@ -97,7 +97,7 @@ bar, a help overlay, and a command palette — all for free.
 Here's a sidebar + detail app with navigation, a confirm dialog, and toasts:
 
 ```rust
-use rataframe::prelude::*;
+use kitz::prelude::*;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem};
@@ -240,7 +240,7 @@ impl Application for App {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App::new())
+    kitz::run(App::new())
 }
 ```
 
@@ -270,7 +270,7 @@ domain logic.
 
 ## Architecture at a Glance
 
-rataframe follows **TEA (The Elm Architecture)**:
+kitz follows **TEA (The Elm Architecture)**:
 
 ```
 Terminal Event

@@ -19,7 +19,7 @@ pub mod widgets;
 use app::Application;
 use color_eyre::Result;
 
-/// Run a rataframe application.
+/// Run a kitz application.
 ///
 /// This is the main entry point. It initialises the terminal, enters the
 /// event loop, and guarantees terminal restoration on exit — even on panic.
@@ -27,7 +27,7 @@ use color_eyre::Result;
 /// # Example
 ///
 /// ```no_run
-/// use rataframe::prelude::*;
+/// use kitz::prelude::*;
 ///
 /// struct App;
 ///
@@ -39,7 +39,7 @@ use color_eyre::Result;
 /// }
 ///
 /// fn main() -> color_eyre::Result<()> {
-///     rataframe::run(App)
+///     kitz::run(App)
 /// }
 /// ```
 pub fn run<A: Application>(app: A) -> Result<()> {

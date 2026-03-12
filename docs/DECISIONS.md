@@ -1,6 +1,6 @@
 # Architecture Decision Log
 
-This document records the key design decisions made during rataframe's planning phase, along with the rationale and alternatives considered.
+This document records the key design decisions made during kitz's planning phase, along with the rationale and alternatives considered.
 
 ---
 
@@ -96,7 +96,7 @@ This document records the key design decisions made during rataframe's planning 
 
 **Decision:** The Help overlay and Command Palette are auto-generated from all panels' `key_hints()` at runtime.
 
-**Rationale:** This is rataframe's killer differentiator. No other TUI framework does this.
+**Rationale:** This is kitz's killer differentiator. No other TUI framework does this.
 
 - Developers define `key_hints()` once per panel
 - The footer shows hints for the focused panel (auto-generated)
@@ -116,11 +116,11 @@ This document records the key design decisions made during rataframe's planning 
 
 ## ADR-009: One Crate, All Features
 
-**Decision:** Ship everything in a single `rataframe` crate. No ecosystem of 10+ sub-crates.
+**Decision:** Ship everything in a single `kitz` crate. No ecosystem of 10+ sub-crates.
 
 **Alternative:** rat-salsa uses `rat-widget`, `rat-focus`, `rat-event`, `rat-ftable`, `rat-scrolled`, `rat-menu`, `rat-text`, `rat-dialog`, `rat-popup`, `rat-theme4`, `rat-markdown` — 11+ crates. It has 54 stars.
 
-**Rationale:** Discoverability. `use rataframe::prelude::*` and everything is available. No dependency version matrix. No "which sub-crate has the focus manager?" questions. Features not used are dead-code eliminated by the compiler.
+**Rationale:** Discoverability. `use kitz::prelude::*` and everything is available. No dependency version matrix. No "which sub-crate has the focus manager?" questions. Features not used are dead-code eliminated by the compiler.
 
 ---
 

@@ -1,5 +1,5 @@
 use crossterm::event::KeyCode;
-use rataframe::prelude::*;
+use kitz::prelude::*;
 
 // =============================================================================
 // Fixtures: reusable test apps
@@ -479,7 +479,7 @@ fn layout_compute_rects_none_empty() {
 // =============================================================================
 
 mod panel_manager_tests {
-    use rataframe::panel::PanelManager;
+    use kitz::panel::PanelManager;
 
     #[test]
     fn new_focuses_first() {
@@ -573,8 +573,8 @@ mod panel_manager_tests {
 // =============================================================================
 
 mod theme_tests {
-    use rataframe::theme::palettes;
-    use rataframe::theme::Theme;
+    use kitz::theme::palettes;
+    use kitz::theme::Theme;
 
     #[test]
     fn default_theme_is_nord() {
@@ -612,7 +612,7 @@ mod theme_tests {
 // =============================================================================
 
 mod text_input_tests {
-    use rataframe::widgets::TextInputState;
+    use kitz::widgets::TextInputState;
 
     #[test]
     fn new_is_empty() {
@@ -746,8 +746,8 @@ mod text_input_tests {
 // =============================================================================
 
 mod overlay_stack_tests {
-    use rataframe::overlay::{Overlay, OverlayResult, OverlayStack};
-    use rataframe::theme::Theme;
+    use kitz::overlay::{Overlay, OverlayResult, OverlayStack};
+    use kitz::theme::Theme;
 
     struct DummyOverlay(&'static str);
     impl Overlay<String> for DummyOverlay {
@@ -799,8 +799,8 @@ mod overlay_stack_tests {
 // =============================================================================
 
 mod nav_stack_tests {
-    use rataframe::prelude::*;
-    use rataframe::screen::{NavigationStack, Screen};
+    use kitz::prelude::*;
+    use kitz::screen::{NavigationStack, Screen};
 
     struct TestScreen {
         name: &'static str,
@@ -893,7 +893,7 @@ mod nav_stack_tests {
 // =============================================================================
 
 mod toast_tests {
-    use rataframe::toast::{Toast, ToastLevel, ToastManager};
+    use kitz::toast::{Toast, ToastLevel, ToastManager};
     use std::time::Duration;
 
     #[test]
@@ -945,7 +945,7 @@ mod toast_tests {
 // =============================================================================
 
 mod keyhint_tests {
-    use rataframe::panel::KeyHint;
+    use kitz::panel::KeyHint;
 
     #[test]
     fn keyhint_construction() {
@@ -960,7 +960,7 @@ mod keyhint_tests {
 // =============================================================================
 
 mod error_boundary_tests {
-    use rataframe::panel::ErrorBoundaryState;
+    use kitz::panel::ErrorBoundaryState;
 
     #[test]
     fn no_errors_initially() {
@@ -980,7 +980,7 @@ mod error_boundary_tests {
 // =============================================================================
 
 mod centered_rect_tests {
-    use rataframe::widgets::centered_rect;
+    use kitz::widgets::centered_rect;
     use ratatui::layout::Rect;
 
     #[test]
@@ -1007,7 +1007,7 @@ mod centered_rect_tests {
 // =============================================================================
 
 mod trait_defaults {
-    use rataframe::prelude::*;
+    use kitz::prelude::*;
     use std::time::Duration;
 
     struct Defaults;
@@ -1021,7 +1021,7 @@ mod trait_defaults {
     #[test]
     fn default_title() {
         let app = Defaults;
-        assert_eq!(app.title(), "rataframe app");
+        assert_eq!(app.title(), "kitz app");
     }
 
     #[test]
@@ -1080,8 +1080,8 @@ mod trait_defaults {
 // =============================================================================
 
 mod context_tests {
-    use rataframe::prelude::*;
-    use rataframe::toast::ToastLevel;
+    use kitz::prelude::*;
+    use kitz::toast::ToastLevel;
 
     #[test]
     fn context_accumulates_intents() {
@@ -1101,7 +1101,7 @@ mod context_tests {
 // =============================================================================
 
 mod view_event_context_tests {
-    use rataframe::context::{EventContext, ViewContext};
+    use kitz::context::{EventContext, ViewContext};
 
     #[test]
     fn view_context_defaults() {

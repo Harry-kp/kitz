@@ -13,7 +13,7 @@ pub fn execute(name: &str, template: &str) -> Result<(), String> {
     }
 
     println!(
-        "\n{}  Creating new rataframe project: {}",
+        "\n{}  Creating new kitz project: {}",
         "✦".cyan().bold(),
         name.bold()
     );
@@ -85,22 +85,22 @@ pub fn execute(name: &str, template: &str) -> Result<(), String> {
     println!("    {}  cd {}", "→".cyan(), name);
     println!("    {}  cargo run", "→".cyan());
     println!();
-    println!("  Or use the rataframe CLI:");
+    println!("  Or use the kitz CLI:");
     println!(
-        "    {}  rataframe dev          {}",
+        "    {}  kitz dev          {}",
         "→".cyan(),
         "(auto-reload)".dimmed()
     );
-    println!("    {}  rataframe generate panel <name>", "→".cyan());
-    println!("    {}  rataframe generate screen <name>", "→".cyan());
-    println!("    {}  rataframe generate overlay <name>", "→".cyan());
+    println!("    {}  kitz generate panel <name>", "→".cyan());
+    println!("    {}  kitz generate screen <name>", "→".cyan());
+    println!("    {}  kitz generate overlay <name>", "→".cyan());
     println!(
-        "    {}  rataframe test         {}",
+        "    {}  kitz test         {}",
         "→".cyan(),
         "(run tests)".dimmed()
     );
     println!(
-        "    {}  rataframe theme list   {}",
+        "    {}  kitz theme list   {}",
         "→".cyan(),
         "(see themes)".dimmed()
     );

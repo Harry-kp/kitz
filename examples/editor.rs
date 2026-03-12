@@ -1,4 +1,4 @@
-use rataframe::prelude::*;
+use kitz::prelude::*;
 use ratatui::layout::{Alignment, Direction};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -40,7 +40,7 @@ impl App {
     fn new() -> Self {
         Self {
             lines: vec![
-                TextInputState::with_content("Welcome to the rataframe editor!"),
+                TextInputState::with_content("Welcome to the kitz editor!"),
                 TextInputState::with_content(""),
                 TextInputState::with_content("This example proves the escape hatch:"),
                 TextInputState::with_content("  - No panels, full custom view()"),
@@ -270,5 +270,5 @@ impl Application for App {
 }
 
 fn main() -> Result<()> {
-    rataframe::run(App::new())
+    kitz::run(App::new())
 }

@@ -17,14 +17,14 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
     if !mod_path.exists() {
         fs::write(
             &mod_path,
-            format!("pub mod {};\n// rataframe:overlay-mods\n", name),
+            format!("pub mod {};\n// kitz:overlay-mods\n", name),
         )
         .map_err(|e| format!("Cannot write overlays/mod.rs: {}", e))?;
         print_generated("src/overlays/mod.rs", "overlay registry");
     } else {
         let inserted = insert_above_marker(
             &mod_path,
-            "rataframe:overlay-mods",
+            "kitz:overlay-mods",
             &format!("pub mod {};", name),
         )?;
         if !inserted {
@@ -84,9 +84,9 @@ fn generate_overlay_file(_name: &str, pascal: &str) -> String {
         r#"use std::fmt::Debug;
 
 use crossterm::event::{{Event, KeyCode, KeyEvent}};
-use rataframe::overlay::{{Overlay, OverlayResult}};
-use rataframe::theme::Theme;
-use rataframe::widgets::centered_rect;
+use kitz::overlay::{{Overlay, OverlayResult}};
+use kitz::theme::Theme;
+use kitz::widgets::centered_rect;
 use ratatui::layout::Rect;
 use ratatui::style::{{Modifier, Style}};
 use ratatui::text::Line;

@@ -21,7 +21,7 @@ pub enum PanelLayout {
     ///
     /// Example: a sidebar + vertically-stacked main panels:
     /// ```
-    /// # use rataframe::panel::{PanelLayout, PanelId};
+    /// # use kitz::panel::{PanelLayout, PanelId};
     /// # use ratatui::layout::{Constraint, Direction};
     /// PanelLayout::nested(Direction::Horizontal, vec![
     ///     (PanelLayout::single("sidebar"), Constraint::Percentage(30)),

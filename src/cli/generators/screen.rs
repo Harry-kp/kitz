@@ -18,16 +18,13 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
     if !mod_path.exists() {
         fs::write(
             &mod_path,
-            format!("pub mod {};\n// rataframe:screen-mods\n", name),
+            format!("pub mod {};\n// kitz:screen-mods\n", name),
         )
         .map_err(|e| format!("Cannot write screens/mod.rs: {}", e))?;
         print_generated("src/screens/mod.rs", "screen registry");
     } else {
-        let inserted = insert_above_marker(
-            &mod_path,
-            "rataframe:screen-mods",
-            &format!("pub mod {};", name),
-        )?;
+        let inserted =
+            insert_above_marker(&mod_path, "kitz:screen-mods", &format!("pub mod {};", name))?;
         if !inserted {
             let mut content =
                 fs::read_to_string(&mod_path).map_err(|e| format!("Cannot read mod.rs: {}", e))?;
@@ -72,7 +69,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
     let messages_path = project_root.join("src/messages.rs");
     if messages_path.exists() {
         let msg = format!("Push{}Screen,", pascal);
-        insert_above_marker(&messages_path, "rataframe:messages", &msg)?;
+        insert_above_marker(&messages_path, "kitz:messages", &msg)?;
         print_modified("src/messages.rs", &format!("added: Push{}Screen", pascal));
     }
 
@@ -93,7 +90,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
 
         insert_above_marker(
             &app_path,
-            "rataframe:update",
+            "kitz:update",
             &format!(
                 "Msg::Push{}Screen => ctx.push_screen(screens::{}::{}Screen::new()),",
                 pascal, name, pascal
@@ -119,7 +116,7 @@ pub fn generate(name: &str, project_root: &Path) -> Result<(), String> {
 
 fn generate_screen_file(name: &str, pascal: &str) -> String {
     format!(
-        r#"use rataframe::prelude::*;
+        r#"use kitz::prelude::*;
 use ratatui::style::Style;
 use ratatui::widgets::Paragraph;
 

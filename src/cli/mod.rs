@@ -7,10 +7,10 @@ use colored::Colorize;
 
 #[derive(Parser)]
 #[command(
-    name = "rataframe",
+    name = "kitz",
     about = "The application framework for terminal user interfaces",
     version,
-    after_help = "Run `rataframe <command> --help` for more information on a command."
+    after_help = "Run `kitz <command> --help` for more information on a command."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -19,7 +19,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Create a new rataframe project
+    /// Create a new kitz project
     New {
         /// Project name (also used as the directory name)
         name: String,

@@ -1,7 +1,7 @@
-# Rataframe Cookbook
+# Kitz Cookbook
 
 Practical recipes for common patterns. Each snippet is self-contained — add
-`use rataframe::prelude::*;` and you're ready to go.
+`use kitz::prelude::*;` and you're ready to go.
 
 ---
 
@@ -143,8 +143,8 @@ fn update(&mut self, msg: Msg, ctx: &mut Context<Msg>) -> Command<Msg> {
 Build custom overlays by implementing the `Overlay` trait:
 
 ```rust
-use rataframe::overlay::{Overlay, OverlayResult};
-use rataframe::theme::Theme;
+use kitz::overlay::{Overlay, OverlayResult};
+use kitz::theme::Theme;
 
 struct InputOverlay {
     input: String,
@@ -331,7 +331,7 @@ messages directly, and assert on state.
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rataframe::prelude::*;
+    use kitz::prelude::*;
 
     #[test]
     fn increment_on_j() {
@@ -421,18 +421,18 @@ zooming the focused panel with `z`, and auto-generates the footer from your
 
 ## 10. Logging
 
-Rataframe apps own stdout, so `println!` corrupts the display. Use
-`rataframe::logging::init_logging` to write to a file via `tracing`.
+Kitz apps own stdout, so `println!` corrupts the display. Use
+`kitz::logging::init_logging` to write to a file via `tracing`.
 
 ```rust
 use tracing::info;
 
 fn main() -> color_eyre::Result<()> {
     // Hold the guard — dropping it flushes pending writes
-    let _log_guard = rataframe::logging::init_logging("my-app");
+    let _log_guard = kitz::logging::init_logging("my-app");
 
     info!("application starting");
-    rataframe::run(MyApp::new())?;
+    kitz::run(MyApp::new())?;
     Ok(())
 }
 ```
@@ -446,7 +446,7 @@ fn update(&mut self, msg: Msg, _ctx: &mut Context<Msg>) -> Command<Msg> {
 }
 ```
 
-Logs go to `~/.local/share/rataframe/my-app/app.log` (daily rotation). Tail
+Logs go to `~/.local/share/kitz/my-app/app.log` (daily rotation). Tail
 them in a separate terminal with `tail -f`.
 
 ---
