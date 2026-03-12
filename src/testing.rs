@@ -113,3 +113,216 @@ impl<A: Application> TestHarness<A> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::prelude::*;
+
+    // -- Minimal counter app for testing --
+
+    struct Counter {
+        count: i32,
+    }
+
+    #[derive(Debug, Clone)]
+    enum CounterMsg {
+        Increment,
+        Decrement,
+        Reset,
+        QuitNow,
+    }
+
+    impl Application for Counter {
+        type Message = CounterMsg;
+
+        fn update(
+            &mut self,
+            msg: CounterMsg,
+            _ctx: &mut Context<CounterMsg>,
+        ) -> Command<CounterMsg> {
+            match msg {
+                CounterMsg::Increment => self.count += 1,
+                CounterMsg::Decrement => self.count -= 1,
+                CounterMsg::Reset => self.count = 0,
+                CounterMsg::QuitNow => return Command::quit(),
+            }
+            Command::none()
+        }
+
+        fn view(&self, _frame: &mut Frame, _ctx: &ViewContext) {}
+
+        fn handle_event(&self, event: &Event, _ctx: &EventContext) -> EventResult<CounterMsg> {
+            if let Event::Key(key) = event {
+                match key.code {
+                    KeyCode::Char('j') => return EventResult::Message(CounterMsg::Increment),
+                    KeyCode::Char('k') => return EventResult::Message(CounterMsg::Decrement),
+                    KeyCode::Char('r') => return EventResult::Message(CounterMsg::Reset),
+                    _ => {}
+                }
+            }
+            EventResult::Ignored
+        }
+    }
+
+    #[test]
+    fn test_harness_initial_state() {
+        let harness = TestHarness::new(Counter { count: 0 });
+        assert_eq!(harness.app().count, 0);
+        assert!(!harness.quit_requested());
+    }
+
+    #[test]
+    fn test_harness_press_key_dispatches_message() {
+        let mut harness = TestHarness::new(Counter { count: 0 });
+        harness.press_key(KeyCode::Char('j'));
+        assert_eq!(harness.app().count, 1);
+
+        harness.press_key(KeyCode::Char('j'));
+        harness.press_key(KeyCode::Char('j'));
+        assert_eq!(harness.app().count, 3);
+    }
+
+    #[test]
+    fn test_harness_decrement_and_reset() {
+        let mut harness = TestHarness::new(Counter { count: 0 });
+        harness.press_key(KeyCode::Char('j'));
+        harness.press_key(KeyCode::Char('j'));
+        harness.press_key(KeyCode::Char('k'));
+        assert_eq!(harness.app().count, 1);
+
+        harness.press_key(KeyCode::Char('r'));
+        assert_eq!(harness.app().count, 0);
+    }
+
+    #[test]
+    fn test_harness_send_message_directly() {
+        let mut harness = TestHarness::new(Counter { count: 10 });
+        harness.send_message(CounterMsg::Decrement);
+        assert_eq!(harness.app().count, 9);
+    }
+
+    #[test]
+    fn test_harness_quit_command() {
+        let mut harness = TestHarness::new(Counter { count: 0 });
+        assert!(!harness.quit_requested());
+        harness.send_message(CounterMsg::QuitNow);
+        assert!(harness.quit_requested());
+    }
+
+    #[test]
+    fn test_harness_unhandled_key_is_ignored() {
+        let mut harness = TestHarness::new(Counter { count: 5 });
+        harness.press_key(KeyCode::Char('x')); // not handled
+        assert_eq!(harness.app().count, 5);
+    }
+
+    // -- Panel app for panel_handle_key testing --
+
+    struct PanelApp {
+        sidebar_selected: usize,
+    }
+
+    #[derive(Debug, Clone)]
+    enum PanelMsg {
+        SidebarDown,
+        SidebarUp,
+    }
+
+    impl Application for PanelApp {
+        type Message = PanelMsg;
+
+        fn update(&mut self, msg: PanelMsg, _ctx: &mut Context<PanelMsg>) -> Command<PanelMsg> {
+            match msg {
+                PanelMsg::SidebarDown => self.sidebar_selected += 1,
+                PanelMsg::SidebarUp => {
+                    self.sidebar_selected = self.sidebar_selected.saturating_sub(1)
+                }
+            }
+            Command::none()
+        }
+
+        fn view(&self, _frame: &mut Frame, _ctx: &ViewContext) {}
+
+        fn panels(&self) -> PanelLayout {
+            PanelLayout::horizontal(vec![
+                ("sidebar", ratatui::layout::Constraint::Percentage(30)),
+                ("main", ratatui::layout::Constraint::Percentage(70)),
+            ])
+        }
+
+        fn panel_handle_key(
+            &mut self,
+            panel: PanelId,
+            key: &crossterm::event::KeyEvent,
+        ) -> EventResult<PanelMsg> {
+            if panel == "sidebar" {
+                match key.code {
+                    KeyCode::Char('j') => return EventResult::Message(PanelMsg::SidebarDown),
+                    KeyCode::Char('k') => return EventResult::Message(PanelMsg::SidebarUp),
+                    _ => {}
+                }
+            }
+            EventResult::Ignored
+        }
+    }
+
+    #[test]
+    fn test_harness_panel_key() {
+        let mut harness = TestHarness::new(PanelApp {
+            sidebar_selected: 0,
+        });
+        harness.press_panel_key("sidebar", KeyCode::Char('j'));
+        assert_eq!(harness.app().sidebar_selected, 1);
+
+        harness.press_panel_key("sidebar", KeyCode::Char('j'));
+        harness.press_panel_key("sidebar", KeyCode::Char('k'));
+        assert_eq!(harness.app().sidebar_selected, 1);
+    }
+
+    // -- Command::message re-dispatch test --
+
+    struct ChainApp {
+        log: Vec<String>,
+    }
+
+    #[derive(Debug, Clone)]
+    enum ChainMsg {
+        Start,
+        Step(String),
+    }
+
+    impl Application for ChainApp {
+        type Message = ChainMsg;
+
+        fn update(&mut self, msg: ChainMsg, _ctx: &mut Context<ChainMsg>) -> Command<ChainMsg> {
+            match msg {
+                ChainMsg::Start => {
+                    self.log.push("start".into());
+                    Command::message(ChainMsg::Step("chained".into()))
+                }
+                ChainMsg::Step(s) => {
+                    self.log.push(s);
+                    Command::none()
+                }
+            }
+        }
+
+        fn view(&self, _frame: &mut Frame, _ctx: &ViewContext) {}
+    }
+
+    #[test]
+    fn test_harness_message_chain() {
+        let mut harness = TestHarness::new(ChainApp { log: vec![] });
+        harness.send_message(ChainMsg::Start);
+        assert_eq!(harness.app().log, vec!["start", "chained"]);
+    }
+
+    #[test]
+    fn test_harness_batch_commands() {
+        let mut harness = TestHarness::new(ChainApp { log: vec![] });
+        harness.send_message(ChainMsg::Start);
+        harness.send_message(ChainMsg::Step("extra".into()));
+        assert_eq!(harness.app().log, vec!["start", "chained", "extra"]);
+    }
+}

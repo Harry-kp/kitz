@@ -12,9 +12,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use crate::app::{Application, EventResult};
 use crate::command::Action;
 use crate::context::{Context, EventContext, Intent, ViewContext};
-use crate::overlay::{
-    CommandPaletteOverlay, HelpOverlay, OverlayResult, OverlayStack, PaletteCommand,
-};
+use crate::overlay::{CommandPaletteOverlay, HelpOverlay, OverlayResult, OverlayStack};
 use crate::panel::{ErrorBoundaryState, KeyHint, PanelManager};
 use crate::screen::NavigationStack;
 use crate::subscription::SubscriptionManager;
@@ -444,7 +442,7 @@ fn handle_convention_keys<A: Application>(
         match key.code {
             KeyCode::Char('q') => *should_quit = true,
             KeyCode::Esc => {
-                // Esc chain: pop overlay -> pop screen -> (nothing)
+                // Esc chain: pop overlay → pop screen → quit
                 if !overlay_stack.is_empty() {
                     overlay_stack.pop();
                 } else if !nav_stack.is_empty() {
@@ -454,6 +452,8 @@ fn handle_convention_keys<A: Application>(
                     } else {
                         panel_manager.sync_layout(app.panels().panel_ids());
                     }
+                } else {
+                    *should_quit = true;
                 }
             }
             KeyCode::Tab if has_panels => {
@@ -489,25 +489,25 @@ fn handle_convention_keys<A: Application>(
                 overlay_stack.push(Box::new(HelpOverlay::new(sections)));
             }
             KeyCode::Char(':') if has_panels => {
-                // Build command palette from all panels' key hints
-                let mut commands: Vec<PaletteCommand<A::Message>> = Vec::new();
+                let mut hints: Vec<(String, String)> = Vec::new();
 
                 for &id in panel_manager.panel_ids() {
                     let title = app.panel_title(id);
-                    let hints = app.panel_key_hints(id);
-                    for hint in hints {
-                        // We can't auto-generate messages from key hints
-                        // without knowing the app's message type. The palette
-                        // shows the hints for discoverability.
-                        let _ = (title, hint, &mut commands);
+                    for hint in app.panel_key_hints(id) {
+                        hints.push((format!("[{}] {}", title, hint.desc), hint.key.to_string()));
                     }
                 }
 
-                // If no auto-generated commands, show a palette with just
-                // info — the framework can't create app messages from hints
-                // alone. Apps that want full palette support should override
-                // handle_event to detect palette-dispatched messages.
-                overlay_stack.push(Box::new(CommandPaletteOverlay::new(commands)));
+                // Global convention hints
+                hints.push(("Toggle help".into(), "?".into()));
+                hints.push(("Next panel".into(), "Tab".into()));
+                hints.push(("Toggle zoom".into(), "z".into()));
+                hints.push(("Quit".into(), "q".into()));
+
+                overlay_stack.push(Box::new(CommandPaletteOverlay::with_hints(
+                    hints,
+                    Vec::new(),
+                )));
             }
             _ => {}
         }
