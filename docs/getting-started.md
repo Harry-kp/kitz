@@ -10,15 +10,24 @@ This guide takes you from zero to a working two-panel app in three steps.
 
 ## Step 1 — Project Setup
 
+The fastest way to start is with the rataframe CLI:
+
 ```bash
-cargo new my-tui && cd my-tui
+cargo install rataframe
+rataframe new my-tui
+cd my-tui
+cargo run
 ```
 
-Add rataframe to `Cargo.toml`:
+This scaffolds a fully working two-panel app with sidebar, detail view, and
+all framework conventions wired up.
+
+**Alternative (manual setup):** If you prefer to set up a project yourself,
+add rataframe to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rataframe = { git = "https://github.com/Harry-kp/rataframe" }
+rataframe = { version = "0.1", default-features = false }
 ```
 
 rataframe re-exports `ratatui`, `crossterm`, and `color_eyre` through its

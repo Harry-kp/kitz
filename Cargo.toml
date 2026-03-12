@@ -25,8 +25,18 @@ tracing-appender = "0.2"
 nucleo-matcher = "0.3"
 
 [features]
-default = []
+default = ["cli"]
+cli = ["dep:clap", "dep:colored"]
 tokio = ["dep:tokio"]
+
+[dependencies.clap]
+version = "4"
+features = ["derive"]
+optional = true
+
+[dependencies.colored]
+version = "2"
+optional = true
 
 [dependencies.tokio]
 version = "1"
@@ -35,6 +45,11 @@ optional = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+
+[[bin]]
+name = "rataframe"
+path = "src/cli/main.rs"
+required-features = ["cli"]
 
 [[example]]
 name = "hello"

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-13
+
+### Added
+
+- **CLI tooling**: `cargo install rataframe` provides the `rataframe` CLI binary.
+- **`rataframe new <name>`**: Scaffold new projects from 4 built-in templates (minimal, panels, dashboard, editor).
+- **`rataframe generate panel <name>`**: Generate a panel and auto-wire it into mod.rs, messages.rs, app.rs, and tests.
+- **`rataframe generate screen <name>`**: Generate a screen with navigation wiring.
+- **`rataframe generate overlay <name>`**: Generate an overlay with full `Overlay` trait implementation.
+- **`rataframe dev`**: Auto-reload development mode via `cargo-watch`.
+- **`rataframe run`** / **`rataframe test`**: Convenience wrappers for cargo commands.
+- **`rataframe theme list`** / **`rataframe theme preview`**: Browse built-in themes with ANSI color swatches.
+- **Marker comment system**: Generated projects use `// rataframe:X` markers as stable injection points for code generation.
+- **Convention structure**: Opinionated project layout (src/app.rs, src/messages.rs, src/panels/, src/screens/, src/overlays/).
+- **24 CLI integration tests** covering project scaffolding, code generation, and template substitution.
+
+### Changed
+
+- CLI is feature-gated (`cli` feature, default-enabled). Library users can opt out with `default-features = false`.
+- `clap` and `colored` added as optional dependencies for CLI.
+- README rewritten to lead with CLI workflow as the primary getting-started path.
+- Getting-started guide updated for CLI-first workflow.
+
 ## [0.1.0] - 2026-03-05
 
 ### Added
@@ -27,5 +50,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TUI-safe logging**: `tracing` integration with rolling file appender.
 - **TestHarness**: Simulate key presses and messages, assert on app state — no terminal needed.
 - **Context system**: `ctx.push_overlay()`, `ctx.toast()`, `ctx.push_screen()`, `ctx.focus_panel()`, `ctx.toggle_zoom()`.
-- 7 examples: hello, counter, todo, async_fetch, editor, dashboard, theme_showcase.
+- 8 examples: hello, counter, todo, async_fetch, editor, dashboard, theme_showcase, file_manager.
 - GitHub Actions CI.
