@@ -63,3 +63,7 @@ path = "examples/dashboard.rs"
 [[example]]
 name = "theme_showcase"
 path = "examples/theme_showcase.rs"
+
+[[example]]
+name = "file_manager"
+path = "examples/file_manager.rs"

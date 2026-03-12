@@ -141,6 +141,7 @@ command palette — all through the same Application trait.
 | `editor.rs` | Escape hatch, modal editing, TextInput |
 | `dashboard.rs` | Subscriptions, toasts, theme cycling |
 | `theme_showcase.rs` | All 4 themes side by side |
+| `file_manager.rs` | **Real-world app**: panels, overlays, toasts, themes, subscriptions |
 
 Run any example:
 
