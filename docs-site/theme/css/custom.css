@@ -1,0 +1,135 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+    --content-max-width: 900px;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.75;
+    letter-spacing: -0.01em;
+}
+
+code, pre, .hljs {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.875em;
+}
+
+pre {
+    border-radius: 8px;
+    padding: 1em 1.25em;
+    border: 1px solid var(--table-border-color);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+h1 {
+    font-size: 2em;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    padding-bottom: 0.3em;
+    border-bottom: 2px solid var(--table-border-color);
+}
+
+h2 {
+    font-size: 1.5em;
+    margin-top: 2em;
+    margin-bottom: 0.5em;
+}
+
+h3 {
+    font-size: 1.2em;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+}
+
+.sidebar .sidebar-scrollbox {
+    padding: 1em 1.5em;
+}
+
+.sidebar ol.chapter li a {
+    padding: 5px 0;
+    font-weight: 500;
+}
+
+.sidebar ol.chapter li a.active {
+    color: var(--sidebar-active);
+    font-weight: 600;
+}
+
+.sidebar .chapter-item {
+    line-height: 1.8;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+th, td {
+    padding: 0.6em 1em;
+    border: 1px solid var(--table-border-color);
+}
+
+th {
+    background-color: var(--table-header-bg);
+    font-weight: 600;
+    text-align: left;
+}
+
+tr:nth-child(even) {
+    background-color: var(--table-alternate-bg);
+}
+
+blockquote {
+    border-left: 4px solid var(--quote-border);
+    background-color: var(--quote-bg);
+    padding: 0.75em 1em;
+    margin: 1em 0;
+    border-radius: 0 8px 8px 0;
+}
+
+blockquote p {
+    margin: 0.25em 0;
+}
+
+code:not(pre code) {
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    background-color: var(--quote-bg);
+    color: var(--inline-code-color);
+    font-size: 0.9em;
+}
+
+a {
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s ease;
+}
+
+a:hover {
+    border-bottom-color: var(--links);
+}
+
+.content main {
+    max-width: var(--content-max-width);
+}
+
+.warning {
+    border-left: 4px solid var(--warning-border);
+    background-color: var(--quote-bg);
+    padding: 0.75em 1em;
+    margin: 1em 0;
+    border-radius: 0 8px 8px 0;
+}
+
+nav.nav-wrapper {
+    margin-top: 3em;
+}

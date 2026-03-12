@@ -1,0 +1,17 @@
+[book]
+title = "Kitz"
+description = "The application framework for ratatui — convention-driven panels, overlays, themes, and TEA architecture"
+authors = ["Harry-kp"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/Harry-kp/kitz"
+edit-url-template = "https://github.com/Harry-kp/kitz/edit/main/docs-site/{path}"
+additional-css = ["theme/css/variables.css", "theme/css/custom.css"]
+no-section-label = false
