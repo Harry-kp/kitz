@@ -3,11 +3,16 @@ name = "rataframe"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
-description = "The application framework for ratatui — panels, overlays, themes, and TEA architecture with convention-driven productivity"
-license = "MIT"
+authors = ["Harry-kp"]
+description = "The application framework for ratatui — convention-driven panels, overlays, themes, and TEA architecture"
+documentation = "https://docs.rs/rataframe"
+homepage = "https://github.com/Harry-kp/rataframe"
 repository = "https://github.com/Harry-kp/rataframe"
+license = "MIT"
+readme = "README.md"
 keywords = ["tui", "ratatui", "framework", "terminal", "tea"]
-categories = ["command-line-interface"]
+categories = ["command-line-interface", "gui"]
+exclude = ["target_old/", ".github/", "docs/"]
 
 [dependencies]
 ratatui = "0.30"
@@ -30,3 +35,31 @@ optional = true
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+
+[[example]]
+name = "hello"
+path = "examples/hello.rs"
+
+[[example]]
+name = "counter"
+path = "examples/counter.rs"
+
+[[example]]
+name = "todo"
+path = "examples/todo.rs"
+
+[[example]]
+name = "async_fetch"
+path = "examples/async_fetch.rs"
+
+[[example]]
+name = "editor"
+path = "examples/editor.rs"
+
+[[example]]
+name = "dashboard"
+path = "examples/dashboard.rs"
+
+[[example]]
+name = "theme_showcase"
+path = "examples/theme_showcase.rs"

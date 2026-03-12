@@ -79,8 +79,8 @@ impl<M: Debug + Send + 'static> Command<M> {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn is_empty(&self) -> bool {
+    /// Returns `true` if this command has no actions.
+    pub fn is_empty(&self) -> bool {
         self.actions.is_empty()
     }
 }

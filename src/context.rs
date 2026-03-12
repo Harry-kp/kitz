@@ -24,11 +24,23 @@ pub struct Context<M: Debug + Send + 'static> {
     pub(crate) intents: Vec<Intent<M>>,
 }
 
+impl<M: Debug + Send + 'static> Default for Context<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<M: Debug + Send + 'static> Context<M> {
-    pub(crate) fn new() -> Self {
+    /// Create an empty context. Useful in tests.
+    pub fn new() -> Self {
         Self {
             intents: Vec::new(),
         }
+    }
+
+    /// Number of pending intents (useful in tests).
+    pub fn intent_count(&self) -> usize {
+        self.intents.len()
     }
 
     /// Push a modal overlay (confirm dialog, help screen, etc.).
@@ -74,16 +86,23 @@ pub struct ViewContext {
     pub(crate) zoomed: bool,
 }
 
+impl Default for ViewContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ViewContext {
-    pub(crate) fn new() -> Self {
+    /// Create a default view context with no focus state.
+    pub fn new() -> Self {
         Self {
             focused_panel: None,
             zoomed: false,
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn with_panels(focused: Option<PanelId>, zoomed: bool) -> Self {
+    /// Create a view context with specific panel focus state.
+    pub fn with_panels(focused: Option<PanelId>, zoomed: bool) -> Self {
         Self {
             focused_panel: focused,
             zoomed,
@@ -106,16 +125,23 @@ pub struct EventContext {
     pub(crate) has_overlay: bool,
 }
 
+impl Default for EventContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventContext {
-    #[allow(dead_code)]
-    pub(crate) fn new() -> Self {
+    /// Create a default event context.
+    pub fn new() -> Self {
         Self {
             focused_panel: None,
             has_overlay: false,
         }
     }
 
-    pub(crate) fn with_state(focused: Option<PanelId>, has_overlay: bool) -> Self {
+    /// Create an event context with specific state.
+    pub fn with_state(focused: Option<PanelId>, has_overlay: bool) -> Self {
         Self {
             focused_panel: focused,
             has_overlay,
