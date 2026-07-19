@@ -534,7 +534,7 @@ fn ca_bundle() -> Option<String> {
 fn log_path() -> Option<PathBuf> {
     let dir = dirs::cache_dir()?.join("kitz");
     std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join("mskui.log"))
+    Some(dir.join("kitz.log"))
 }
 
 fn open_log_file() -> Option<Arc<Mutex<File>>> {
@@ -562,7 +562,7 @@ fn check_results<T>(results: Vec<Result<T, (T, rdkafka::types::RDKafkaErrorCode)
 /// three failure layers: TCP reachability, IAM token generation, and the full
 /// librdkafka SASL_SSL handshake with verbose debug logs.
 pub fn doctor(profile: &EnvProfile) {
-    println!("mskui doctor");
+    println!("kitz doctor");
     println!("  env       : {}", profile.name);
     println!("  auth      : {}", profile.auth);
     println!("  region    : {}", profile.region);

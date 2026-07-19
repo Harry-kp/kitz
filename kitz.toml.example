@@ -1,4 +1,4 @@
-# Copy to ./mskui.toml (or ~/.config/mskui/config.toml) and edit.
+# Copy to ./kitz.toml (or ~/.config/kitz/config.toml) and edit.
 # One [[env]] block per MSK cluster.
 #
 # auth picks the wire protocol - match it to your bootstrap port:
@@ -6,7 +6,7 @@
 #   "tls"       → port 9094 (TLS, no auth)
 #   "iam"       → port 9098 (SASL_SSL + MSK IAM, uses your ~/.aws creds)  [default]
 #
-# NOTE: MSK brokers are usually private VPC IPs. You must run mskui somewhere
+# NOTE: MSK brokers are usually private VPC IPs. You must run kitz somewhere
 # that can route to them (on the VPC's VPN, or on a bastion inside the VPC).
 
 [[env]]
