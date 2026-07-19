@@ -7,18 +7,20 @@ on:
   schedule:
     - cron: "0 6 * * 1" # weekly audit
 
-# audit-check posts results as a check run — needs checks:write, else it fails
-# with "Resource not accessible by integration". Only real vulnerabilities fail
-# the job; unmaintained/unsound advisories are informational warnings.
 permissions:
   contents: read
-  checks: write
 
 jobs:
   audit:
+    # Runs on Linux: `cargo audit` only reads Cargo.lock (no crate build), so
+    # it doesn't hit the librdkafka/sasl Linux build issue. cargo-audit comes
+    # from a prebuilt binary (taiki-e/install-action) — seconds, not a ~5min
+    # source compile. Fails only on real vulnerabilities; unmaintained/unsound
+    # advisories are informational.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
+      - uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+      - run: cargo audit
