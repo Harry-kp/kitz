@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - name: release-plz
-        uses: release-plz/action@v0
+        uses: MarcoIeni/release-plz-action@v0.5
         env:
           # A PAT (not the default GITHUB_TOKEN) so the tag/commit release-plz
           # creates DOES trigger the cargo-dist release workflow. GITHUB_TOKEN
