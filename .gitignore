@@ -1,7 +1,7 @@
 # Rust
 /target
 
-# Local cluster config — contains real broker hostnames; never commit.
+# Local cluster config - contains real broker hostnames; never commit.
 # Ship franz.toml.example instead.
 /franz.toml
 franz.toml

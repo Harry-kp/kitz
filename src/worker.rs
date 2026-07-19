@@ -1,6 +1,6 @@
 //! Kafka worker thread. Owns the `KafkaClient` and runs *every* blocking Kafka
 //! call here, off the UI thread. The UI sends [`Cmd`]s and receives [`Evt`]s
-//! through channels, so rendering never blocks — no matter how slow the
+//! through channels, so rendering never blocks - no matter how slow the
 //! cluster is.
 //!
 //! rdkafka's client types aren't `Sync`, but they never leave this thread:
@@ -55,7 +55,7 @@ pub enum Evt {
     },
     /// A mutation (create/delete/+partitions) or refresh succeeded.
     Ok(String),
-    /// Any operation failed — carries a human-readable message.
+    /// Any operation failed - carries a human-readable message.
     Failed(String),
 }
 

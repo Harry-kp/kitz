@@ -1,4 +1,4 @@
-//! mskui — an IAM-auth-native, multi-environment terminal UI for AWS MSK.
+//! mskui - an IAM-auth-native, multi-environment terminal UI for AWS MSK.
 //!
 //! Launch → pick an environment → inspect topics, partitions, consumer groups,
 //! peek events, and do topic admin (create / add partitions / delete) with a
@@ -23,7 +23,7 @@ use crate::config::Config;
 fn main() -> Result<()> {
     let config = Config::load()?;
 
-    // `mskui doctor [env]` — plain-text connectivity diagnosis, no TUI.
+    // `mskui doctor [env]` - plain-text connectivity diagnosis, no TUI.
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("doctor") {
         let env = match args.get(1) {

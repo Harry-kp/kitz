@@ -10,7 +10,7 @@ installers = ["shell", "homebrew", "npm"]
 tap = "Harry-kp/homebrew-tap"
 npm-scope = "@harry-kp"
 publish-jobs = ["homebrew", "npm"]
-# macOS only for now (WIP). Prebuilt binaries are self-contained — librdkafka
+# macOS only for now (WIP). Prebuilt binaries are self-contained - librdkafka
 # is statically linked (cmake-build) and OpenSSL is vendored (ssl-vendored), so
 # end users installing via npm/brew/curl need no build or runtime deps.
 # Linux/musl come later (librdkafka+OpenSSL cross-compile needs a C toolchain).

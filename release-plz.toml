@@ -9,7 +9,7 @@ publish = true
 
 [[package]]
 name = "franz"
-# franz is a binary — semver-checks (library-only) don't apply. Version bumps
+# franz is a binary - semver-checks (library-only) don't apply. Version bumps
 # come from conventional commits:
 #   fix:  -> patch   ·   feat: -> patch (pre-1.0)   ·   feat!/BREAKING -> minor (pre-1.0)
 semver_check = false

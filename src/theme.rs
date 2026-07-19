@@ -1,5 +1,5 @@
 //! Color palette borrowed from vortix (Synthwave): slate panels, cyan accents,
-//! coral/emerald status. Kept as a flat set of consts — the app is small enough
+//! coral/emerald status. Kept as a flat set of consts - the app is small enough
 //! not to need runtime theme switching yet.
 
 use ratatui::style::Color;

@@ -16,13 +16,13 @@ pub struct EnvProfile {
     /// AWS region of the cluster (only used for IAM auth).
     pub region: String,
     /// Wire protocol: "iam" (SASL_SSL + MSK IAM, default), "tls" (SSL, no auth),
-    /// or "plaintext" (no TLS, no auth — typical for VPC-internal 9092).
+    /// or "plaintext" (no TLS, no auth - typical for VPC-internal 9092).
     #[serde(default = "default_auth")]
     pub auth: String,
     /// AWS profile to use for creds (optional; falls back to default chain).
     #[serde(default)]
     pub aws_profile: Option<String>,
-    /// Marks a production cluster — destructive ops require typed confirmation.
+    /// Marks a production cluster - destructive ops require typed confirmation.
     #[serde(default)]
     pub prod: bool,
 }
@@ -41,7 +41,7 @@ impl Config {
     /// Loads config, preferring `./franz.toml` then `~/.config/franz/config.toml`.
     pub fn load() -> Result<Self> {
         let path = Self::locate()
-            .context("no config found — create ./franz.toml or ~/.config/franz/config.toml")?;
+            .context("no config found - create ./franz.toml or ~/.config/franz/config.toml")?;
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
         let cfg: Config =

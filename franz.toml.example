@@ -1,7 +1,7 @@
 # Copy to ./mskui.toml (or ~/.config/mskui/config.toml) and edit.
 # One [[env]] block per MSK cluster.
 #
-# auth picks the wire protocol — match it to your bootstrap port:
+# auth picks the wire protocol - match it to your bootstrap port:
 #   "plaintext" → port 9092 (no TLS, no auth; typical VPC-internal cluster)
 #   "tls"       → port 9094 (TLS, no auth)
 #   "iam"       → port 9098 (SASL_SSL + MSK IAM, uses your ~/.aws creds)  [default]
