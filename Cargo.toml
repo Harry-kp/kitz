@@ -1,0 +1,42 @@
+[package]
+name = "franz"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+description = "Terminal UI for AWS MSK Kafka with IAM auth, multi-environment switching, and live topic and consumer-group inspection"
+authors = ["Harry KP <harrykp@users.noreply.github.com>"]
+license = "MIT"
+repository = "https://github.com/Harry-kp/franz"
+homepage = "https://github.com/Harry-kp/franz"
+documentation = "https://github.com/Harry-kp/franz"
+readme = "README.md"
+keywords = ["kafka", "msk", "tui", "aws", "terminal"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = [".github/", "franz.toml", "*.png", "docs/"]
+
+[dependencies]
+# Kafka — vendored librdkafka via cmake, with OpenSSL statically vendored
+# (`ssl-vendored`) so the prebuilt binary is self-contained and runs on any
+# Mac without the user installing OpenSSL/librdkafka. SASL uses macOS's system
+# libsasl2 (always present). This is what makes npm/brew/curl installs
+# dependency-free for end users.
+rdkafka = { version = "0.36", features = ["cmake-build", "ssl-vendored", "sasl"] }
+
+# AWS MSK IAM auth — the wedge. Generates the SigV4 SASL token.
+aws-config = "1"
+aws-types = "1"
+aws-msk-iam-sasl-signer = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+# TUI (palette borrowed from vortix)
+ratatui = "0.29"
+crossterm = "0.28"
+ratatui-flip-panel = "0.1"   # animated card-flip for the Detail⟷Config pane
+
+# Config + errors
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"   # pretty-print JSON event payloads
+toml = "0.8"
+anyhow = "1"
+dirs = "5"
+arboard = "3"      # copy payloads/keys to the system clipboard
