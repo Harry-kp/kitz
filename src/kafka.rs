@@ -1,5 +1,5 @@
 //! MSK client wrapper. Everything that talks to Kafka lives here so the UI
-//! never sees an rdkafka type. Auth is MSK IAM (SASL OAUTHBEARER) — the whole
+//! never sees an rdkafka type. Auth is MSK IAM (SASL OAUTHBEARER) - the whole
 //! reason this tool exists.
 
 use std::error::Error;
@@ -25,7 +25,7 @@ const TIMEOUT: Duration = Duration::from_secs(15);
 
 // ── Plain data returned to the UI ────────────────────────────────────────
 
-/// Cheap per-topic metadata from the single cluster-wide fetch. No watermarks —
+/// Cheap per-topic metadata from the single cluster-wide fetch. No watermarks -
 /// those are the expensive per-partition round-trips, loaded on demand. Sent to
 /// the UI so it can build topic lists + detail views with zero latency.
 #[derive(Clone)]
@@ -44,7 +44,7 @@ pub struct TopicMeta {
 
 pub struct PartitionInfo {
     pub id: i32,
-    /// Leader broker id — kept for a future leader-skew view (not shown in the
+    /// Leader broker id - kept for a future leader-skew view (not shown in the
     /// compact narrow Detail table).
     #[allow(dead_code)]
     pub leader: i32,
@@ -75,7 +75,7 @@ pub struct GroupSummary {
     pub members: usize,
     pub protocol: String,
     /// Topics this group's members are subscribed to (parsed from member
-    /// metadata — no extra network calls).
+    /// metadata - no extra network calls).
     pub topics: Vec<String>,
 }
 
@@ -141,7 +141,7 @@ pub struct KafkaClient {
     admin: AdminClient<MskContext>,
     rt: tokio::runtime::Runtime,
     /// Cluster-wide topic metadata, fetched once at connect and after admin
-    /// ops. Reading it is free (no network) — that's what keeps navigation
+    /// ops. Reading it is free (no network) - that's what keeps navigation
     /// instant.
     meta: Vec<TopicMeta>,
 }
@@ -193,7 +193,7 @@ impl KafkaClient {
         Ok(())
     }
 
-    /// Cached topic/partition metadata — free (no network). The UI builds its
+    /// Cached topic/partition metadata - free (no network). The UI builds its
     /// topic list and detail views from this.
     pub fn metadata(&self) -> Vec<TopicMeta> {
         self.meta.clone()
@@ -249,7 +249,7 @@ impl KafkaClient {
                     };
                     for m in ms {
                         // Subscription (what they asked for) + assignment (what
-                        // they actually hold) — union covers more real cases.
+                        // they actually hold) - union covers more real cases.
                         if let Some(meta) = m.metadata() {
                             parse_topic_strings(meta, false)
                                 .into_iter()
@@ -312,7 +312,7 @@ impl KafkaClient {
                 let v = map
                     .get(*k)
                     .and_then(|e| e.value.clone())
-                    .unwrap_or_else(|| "—".to_string());
+                    .unwrap_or_else(|| "-".to_string());
                 ((*k).to_string(), v)
             })
             .collect();
@@ -613,7 +613,7 @@ pub fn doctor(profile: &EnvProfile) {
     };
     consumer.poll(Duration::from_secs(3));
     match consumer.fetch_metadata(None, Duration::from_secs(15)) {
-        Ok(md) => println!("\n  ✓ metadata OK — {} topics", md.topics().len()),
+        Ok(md) => println!("\n  ✓ metadata OK - {} topics", md.topics().len()),
         Err(e) => println!("\n  ✗ metadata FAIL: {e}"),
     }
 }

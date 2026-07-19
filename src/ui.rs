@@ -1,6 +1,6 @@
 //! Rendering. Reads `App`, draws frames. Styling follows vortix: a dense
 //! single-line header, rounded titled panels, a keybinding footer, animated
-//! spinners — and a bird's-eye dashboard where Topics, Detail, and Groups are
+//! spinners - and a bird's-eye dashboard where Topics, Detail, and Groups are
 //! all visible at once. The focused panel gets a cyan border; z zooms it.
 //!
 //! Rendering is pure and never blocks: expensive data (watermarks, groups)
@@ -110,7 +110,7 @@ fn panel(title: &str, focused: bool) -> Block<'static> {
     } else {
         theme::BORDER
     };
-    // No background fill — transparent outline on the app's dark bg, like vortix.
+    // No background fill - transparent outline on the app's dark bg, like vortix.
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
@@ -183,7 +183,7 @@ fn footer(frame: &mut Frame, area: Rect, lead: Option<&str>, hints: &[(&str, &st
         format!("│  {status}"),
         Style::default().fg(theme::ACCENT_LIGHT),
     ));
-    // Transparent (no filled bar) — sits on the app bg like vortix.
+    // Transparent (no filled bar) - sits on the app bg like vortix.
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::APP_BG)),
         area,
@@ -358,7 +358,7 @@ fn render_main(frame: &mut Frame, app: &mut App) {
             Panel::Logs => render_logs(frame, rows[1], app, true),
         }
     } else {
-        // Aligned 2×2 grid: split into rows first, then each row at the same x —
+        // Aligned 2×2 grid: split into rows first, then each row at the same x -
         // so the left/right pane boundaries line up. Left column is narrower.
         let grid = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(rows[1]);
@@ -372,7 +372,7 @@ fn render_main(frame: &mut Frame, app: &mut App) {
         render_logs(frame, bot[1], app, app.focus == Panel::Logs);
     }
 
-    // Footer stays lean — the essentials for this pane. Everything else lives
+    // Footer stays lean - the essentials for this pane. Everything else lives
     // behind `x` (actions) and `?` (help).
     let (pane_name, hints): (&str, &[(&str, &str)]) = match app.focus {
         Panel::Topics => (
@@ -474,7 +474,7 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             .add_modifier(Modifier::BOLD),
     ));
 
-    // Transparent header — no filled bar (vortix look).
+    // Transparent header - no filled bar (vortix look).
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::APP_BG)),
         area,
@@ -544,7 +544,7 @@ fn render_detail(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
 
     let cell = |v: i64| {
         if v < 0 {
-            "—".to_string()
+            "-".to_string()
         } else {
             v.to_string()
         }
@@ -673,7 +673,7 @@ fn render_groups(frame: &mut Frame, area: Rect, app: &mut App, focused: bool) {
     frame.render_stateful_widget(table, area, &mut app.group_state);
 }
 
-/// Topic config panel (top-right) — the day-to-day "what's this topic set to?"
+/// Topic config panel (top-right) - the day-to-day "what's this topic set to?"
 /// glance: retention, cleanup policy, min ISR, etc. Follows the highlight.
 fn render_config(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     let lines: Vec<Line> = match &app.topic_config {
@@ -798,7 +798,7 @@ fn render_flip_pane(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     if narrow.width >= 24 {
         render_face(frame, narrow);
     } else {
-        // Collapsed to a sliver — draw the flip edge (a glowing seam).
+        // Collapsed to a sliver - draw the flip edge (a glowing seam).
         let buf = frame.buffer_mut();
         let mid = narrow.x + narrow.width / 2;
         for y in narrow.y..narrow.y.saturating_add(narrow.height) {
@@ -818,7 +818,7 @@ fn narrowed_rect(area: Rect, ratio: f32) -> Rect {
     Rect::new(x, area.y, w, area.height)
 }
 
-/// Activity/debug log panel — global by nature (vortix-style). Tails newest at
+/// Activity/debug log panel - global by nature (vortix-style). Tails newest at
 /// the bottom; ↑↓ scrolls back when focused.
 fn render_logs(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     let inner_h = area.height.saturating_sub(2) as usize;
@@ -1037,7 +1037,7 @@ fn render_modal(frame: &mut Frame, app: &App) {
             ];
             if f.is_prod {
                 lines.push(Line::from(Span::styled(
-                    format!("  ⚠ PROD — type the {noun} name to confirm:"),
+                    format!("  ⚠ PROD - type the {noun} name to confirm:"),
                     Style::default()
                         .fg(theme::ERROR)
                         .add_modifier(Modifier::BOLD),
@@ -1177,7 +1177,7 @@ fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: us
     let ts = r
         .timestamp
         .map(|t| t.to_string())
-        .unwrap_or_else(|| "—".into());
+        .unwrap_or_else(|| "-".into());
     let mut detail = vec![Line::from(vec![
         Span::styled("─ payload  ", Style::default().fg(theme::SEPARATOR)),
         Span::styled(
@@ -1372,7 +1372,7 @@ mod tests {
         ];
         app.logs = vec![
             "10:02:11  connected to stag · 12 topics".into(),
-            "10:02:19  tracking service.events.v2 — graph is live".into(),
+            "10:02:19  tracking service.events.v2 - graph is live".into(),
             "10:03:04  peeked 50 events".into(),
         ];
         app

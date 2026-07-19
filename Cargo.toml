@@ -15,14 +15,14 @@ categories = ["command-line-utilities", "development-tools"]
 exclude = [".github/", "franz.toml", "*.png", "docs/"]
 
 [dependencies]
-# Kafka — vendored librdkafka via cmake, with OpenSSL statically vendored
+# Kafka - vendored librdkafka via cmake, with OpenSSL statically vendored
 # (`ssl-vendored`) so the prebuilt binary is self-contained and runs on any
 # Mac without the user installing OpenSSL/librdkafka. SASL uses macOS's system
 # libsasl2 (always present). This is what makes npm/brew/curl installs
 # dependency-free for end users.
 rdkafka = { version = "0.36", features = ["cmake-build", "ssl-vendored", "sasl"] }
 
-# AWS MSK IAM auth — the wedge. Generates the SigV4 SASL token.
+# AWS MSK IAM auth - the wedge. Generates the SigV4 SASL token.
 aws-config = "1"
 aws-types = "1"
 aws-msk-iam-sasl-signer = "1"

@@ -37,7 +37,7 @@ pub enum Panel {
     Logs,
 }
 
-/// Connection in progress — drives the spinner overlay.
+/// Connection in progress - drives the spinner overlay.
 pub struct Connecting {
     pub profile: EnvProfile,
     pub started: Instant,
@@ -117,7 +117,7 @@ pub struct App {
     pub focus: Panel,
     pub zoom: bool,
 
-    /// Cached cluster metadata — the source for the topic list + detail. Free
+    /// Cached cluster metadata - the source for the topic list + detail. Free
     /// to read (no network), so navigation never blocks.
     pub meta: Vec<TopicMeta>,
     pub topic_state: ListState,
@@ -549,7 +549,7 @@ impl App {
         self.rate_last_at = Instant::now();
         self.toast(
             ToastLevel::Info,
-            format!("tracking {} — graph is live", name.0),
+            format!("tracking {} - graph is live", name.0),
         );
         self.worker.send(Cmd::Watermarks(name.0));
     }
@@ -586,7 +586,7 @@ impl App {
 
     // ── Navigation ────────────────────────────────────────────────────
 
-    /// Clamp at the ends — no wrap-around (per user: no circular looping).
+    /// Clamp at the ends - no wrap-around (per user: no circular looping).
     fn next_index(cur: Option<usize>, len: usize, delta: isize) -> Option<usize> {
         if len == 0 {
             return None;
@@ -615,7 +615,7 @@ impl App {
                 let len = self.filtered_topics().len();
                 let n = Self::next_index(self.topic_state.selected(), len, delta);
                 self.topic_state.select(n);
-                self.rebuild_detail(); // instant — from cache, no network
+                self.rebuild_detail(); // instant - from cache, no network
             }
             Panel::Detail => {
                 let max = self
