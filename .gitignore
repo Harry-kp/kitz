@@ -1,0 +1,11 @@
+# Rust
+/target
+
+# Local cluster config — contains real broker hostnames; never commit.
+# Ship franz.toml.example instead.
+/franz.toml
+franz.toml
+
+# Logs / scratch
+*.log
+.DS_Store

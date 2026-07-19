@@ -1,0 +1,15 @@
+[workspace]
+changelog_config = "cliff.toml"
+pr_labels = ["release"]
+# cargo-dist creates the GitHub Release (from the tag); release-plz only
+# bumps the version, updates the changelog, and publishes to crates.io.
+git_release_enable = false
+git_tag_name = "v{{ version }}"
+publish = true
+
+[[package]]
+name = "franz"
+# franz is a binary — semver-checks (library-only) don't apply. Version bumps
+# come from conventional commits:
+#   fix:  -> patch   ·   feat: -> patch (pre-1.0)   ·   feat!/BREAKING -> minor (pre-1.0)
+semver_check = false
