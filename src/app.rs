@@ -63,10 +63,16 @@ pub enum Modal {
     Create(CreateForm),
     Delete(DeleteForm),
     AddPartitions(PartForm),
-    Peek { records: Vec<EventRecord>, sel: usize },
+    Peek {
+        records: Vec<EventRecord>,
+        sel: usize,
+    },
     /// Context action menu (vortix-style): every action for the current
     /// screen/pane. Keeps the footer to essentials.
-    Actions { items: Vec<(char, &'static str)>, sel: usize },
+    Actions {
+        items: Vec<(char, &'static str)>,
+        sel: usize,
+    },
     Help,
     Error(String),
 }
@@ -205,7 +211,11 @@ impl App {
     fn toast(&mut self, level: ToastLevel, msg: impl Into<String>) {
         let msg = msg.into();
         self.log(&msg);
-        self.toast = Some(Toast { message: msg, level, born: Instant::now() });
+        self.toast = Some(Toast {
+            message: msg,
+            level,
+            born: Instant::now(),
+        });
     }
 
     /// Whether the flip animation is mid-flight (drives faster redraws).
@@ -268,9 +278,7 @@ impl App {
     fn selected_topic_name(&self) -> Option<String> {
         let visible = self.filtered_topics();
         let sel = self.topic_state.selected()?;
-        visible
-            .get(sel)
-            .map(|&i| self.meta[i].name.clone())
+        visible.get(sel).map(|&i| self.meta[i].name.clone())
     }
 
     // ── Async event handling (drained each tick, never blocks) ───────────
@@ -289,11 +297,16 @@ impl App {
     fn apply(&mut self, evt: Evt) {
         match evt {
             Evt::Connected { profile, meta } => {
-                self.log(format!("connected to {} · {} topics", profile.name, meta.len()));
+                self.log(format!(
+                    "connected to {} · {} topics",
+                    profile.name,
+                    meta.len()
+                ));
                 self.connected = Some(profile);
                 self.connecting = None;
                 self.meta = meta;
-                self.topic_state.select((!self.meta.is_empty()).then_some(0));
+                self.topic_state
+                    .select((!self.meta.is_empty()).then_some(0));
                 self.screen = Screen::Main;
                 self.status = format!("{} topics", self.meta.len());
                 self.rebuild_detail();
@@ -311,7 +324,7 @@ impl App {
                 self.log(format!("topics refreshed · {}", meta.len()));
                 self.meta = meta;
                 let n = self.filtered_topics().len();
-                if self.topic_state.selected().map_or(true, |s| s >= n) {
+                if self.topic_state.selected().is_none_or(|s| s >= n) {
                     self.topic_state.select((n > 0).then_some(0));
                 }
                 self.status = format!("{} topics", self.meta.len());
@@ -350,13 +363,19 @@ impl App {
                 self.groups = groups;
                 self.groups_loaded = true;
                 self.loading_groups = false;
-                self.group_state.select((!self.groups.is_empty()).then_some(0));
+                self.group_state
+                    .select((!self.groups.is_empty()).then_some(0));
                 self.status = format!("{} consumer groups", self.groups.len());
             }
             Evt::TopicConfig { topic, entries } => {
                 self.loading_config = false;
                 // Keep only if it's still the selected topic.
-                if self.detail.as_ref().map(|d| d.name == topic).unwrap_or(false) {
+                if self
+                    .detail
+                    .as_ref()
+                    .map(|d| d.name == topic)
+                    .unwrap_or(false)
+                {
                     self.topic_config = Some((topic, entries));
                 }
             }
@@ -433,13 +452,18 @@ impl App {
         if self.connecting.is_some() {
             return;
         }
-        let Some(i) = self.env_state.selected() else { return };
+        let Some(i) = self.env_state.selected() else {
+            return;
+        };
         let profile = self.config.envs[i].clone();
         // Clear any state from a previous environment before reconnecting.
         self.reset_dashboard();
         self.status = format!("connecting to {}…", profile.name);
         self.worker.send(Cmd::Connect(profile.clone()));
-        self.connecting = Some(Connecting { profile, started: Instant::now() });
+        self.connecting = Some(Connecting {
+            profile,
+            started: Instant::now(),
+        });
     }
 
     /// Wipe per-cluster state so switching environments never shows stale data.
@@ -465,7 +489,9 @@ impl App {
 
     /// Hot-switch to env `idx` (number keys). No-op if already there.
     fn switch_env(&mut self, idx: usize) {
-        let Some(env) = self.config.envs.get(idx) else { return };
+        let Some(env) = self.config.envs.get(idx) else {
+            return;
+        };
         if self.connecting.is_none() && self.current_env_index() == Some(idx) {
             let name = env.name.clone();
             self.toast(ToastLevel::Warning, format!("already on {name}"));
@@ -486,7 +512,11 @@ impl App {
                 }
             }
             Panel::Detail => {
-                let max = self.detail.as_ref().map(|d| d.partitions.len() as u16).unwrap_or(0);
+                let max = self
+                    .detail
+                    .as_ref()
+                    .map(|d| d.partitions.len() as u16)
+                    .unwrap_or(0);
                 self.detail_scroll = if top { 0 } else { max };
             }
             Panel::Logs => {
@@ -500,7 +530,11 @@ impl App {
         if self.loading_watermarks {
             return;
         }
-        let Some(name) = self.detail.as_ref().map(|d| (d.name.clone(), d.watermarks_loaded)) else {
+        let Some(name) = self
+            .detail
+            .as_ref()
+            .map(|d| (d.name.clone(), d.watermarks_loaded))
+        else {
             return;
         };
         if name.1 && self.rate_topic.as_deref() == Some(name.0.as_str()) {
@@ -513,7 +547,10 @@ impl App {
         self.rate.clear();
         self.rate_last_total = None;
         self.rate_last_at = Instant::now();
-        self.toast(ToastLevel::Info, format!("tracking {} — graph is live", name.0));
+        self.toast(
+            ToastLevel::Info,
+            format!("tracking {} — graph is live", name.0),
+        );
         self.worker.send(Cmd::Watermarks(name.0));
     }
 
@@ -539,7 +576,9 @@ impl App {
         if self.peeking {
             return;
         }
-        let Some(name) = self.selected_topic_name() else { return };
+        let Some(name) = self.selected_topic_name() else {
+            return;
+        };
         self.peeking = true;
         self.status = format!("peeking {name}…");
         self.worker.send(Cmd::Peek(name));
@@ -579,15 +618,18 @@ impl App {
                 self.rebuild_detail(); // instant — from cache, no network
             }
             Panel::Detail => {
-                let max = self.detail.as_ref().map(|d| d.partitions.len() as u16).unwrap_or(0);
+                let max = self
+                    .detail
+                    .as_ref()
+                    .map(|d| d.partitions.len() as u16)
+                    .unwrap_or(0);
                 self.detail_scroll =
                     (self.detail_scroll as isize + delta).clamp(0, max as isize) as u16;
             }
             Panel::Logs => {
                 // logs_scroll counts lines back from newest.
                 let max = self.logs.len() as isize;
-                self.logs_scroll =
-                    (self.logs_scroll as isize + delta).clamp(0, max) as u16;
+                self.logs_scroll = (self.logs_scroll as isize + delta).clamp(0, max) as u16;
             }
             Panel::Graph => {}
         }
@@ -678,7 +720,8 @@ impl App {
 
             // ── Environment switching ──
             (Screen::Main, Char('e')) => {
-                self.env_state.select(Some(self.current_env_index().unwrap_or(0)));
+                self.env_state
+                    .select(Some(self.current_env_index().unwrap_or(0)));
                 self.screen = Screen::EnvSelect;
             }
             (Screen::Main, Char(c)) if c.is_ascii_digit() && c != '0' => {
@@ -706,7 +749,8 @@ impl App {
             (Screen::Groups, Up | Char('k')) => self.nav_groups(-1),
             (Screen::Groups, Down | Char('j')) => self.nav_groups(1),
             (Screen::Groups, Char('g')) => {
-                self.group_state.select((!self.groups.is_empty()).then_some(0));
+                self.group_state
+                    .select((!self.groups.is_empty()).then_some(0));
             }
             (Screen::Groups, Char('d')) => self.open_delete_group(),
             (Screen::Groups, Char('r')) => {
@@ -732,7 +776,9 @@ impl App {
     }
 
     fn open_delete_group(&mut self) {
-        let Some(i) = self.group_state.selected() else { return };
+        let Some(i) = self.group_state.selected() else {
+            return;
+        };
         if let Some(g) = self.groups.get(i) {
             self.modal = Modal::Delete(DeleteForm {
                 kind: DeleteKind::Group,
@@ -745,7 +791,10 @@ impl App {
 
     fn open_add_partitions(&mut self) {
         if let Some(topic) = self.selected_topic_name() {
-            self.modal = Modal::AddPartitions(PartForm { topic, total: String::new() });
+            self.modal = Modal::AddPartitions(PartForm {
+                topic,
+                total: String::new(),
+            });
         }
     }
 
@@ -893,7 +942,10 @@ impl App {
     /// line + activity log.
     fn copy(&mut self, text: &str, what: &str) {
         match copy_to_clipboard(text) {
-            Ok(()) => self.toast(ToastLevel::Success, format!("copied {what} ({} bytes)", text.len())),
+            Ok(()) => self.toast(
+                ToastLevel::Success,
+                format!("copied {what} ({} bytes)", text.len()),
+            ),
             Err(e) => self.toast(ToastLevel::Error, format!("copy failed: {e}")),
         }
     }
@@ -927,7 +979,10 @@ impl App {
             return;
         };
         self.status = format!("adding partitions to {}…", f.topic);
-        self.worker.send(Cmd::AddPartitions { name: f.topic.clone(), total });
+        self.worker.send(Cmd::AddPartitions {
+            name: f.topic.clone(),
+            total,
+        });
     }
 
     fn submit_delete(&mut self, f: &DeleteForm) {

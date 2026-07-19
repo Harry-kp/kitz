@@ -40,13 +40,12 @@ pub struct Config {
 impl Config {
     /// Loads config, preferring `./franz.toml` then `~/.config/franz/config.toml`.
     pub fn load() -> Result<Self> {
-        let path = Self::locate().context(
-            "no config found — create ./franz.toml or ~/.config/franz/config.toml",
-        )?;
+        let path = Self::locate()
+            .context("no config found — create ./franz.toml or ~/.config/franz/config.toml")?;
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        let cfg: Config = toml::from_str(&raw)
-            .with_context(|| format!("parsing {}", path.display()))?;
+        let cfg: Config =
+            toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
         anyhow::ensure!(!cfg.envs.is_empty(), "config has no [[env]] entries");
         Ok(cfg)
     }

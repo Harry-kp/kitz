@@ -23,7 +23,10 @@ const SPINNER: [&str; 4] = ["◐", "◓", "◑", "◒"];
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
-    frame.render_widget(Block::default().style(Style::default().bg(theme::APP_BG)), area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(theme::APP_BG)),
+        area,
+    );
 
     if area.width < MIN_W || area.height < MIN_H {
         let msg = format!(
@@ -56,7 +59,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 fn render_toast(frame: &mut Frame, app: &App) {
     let Some(t) = &app.toast else { return };
     let area = frame.area();
-    let w = (area.width / 3).clamp(24, 54).min(area.width.saturating_sub(2));
+    let w = (area.width / 3)
+        .clamp(24, 54)
+        .min(area.width.saturating_sub(2));
 
     let (label, color) = match t.level {
         crate::app::ToastLevel::Info => (" INFO ", theme::ACCENT),
@@ -68,7 +73,12 @@ fn render_toast(frame: &mut Frame, app: &App) {
     let inner_w = w.saturating_sub(4).max(1) as usize;
     let text_lines = (t.message.chars().count() / inner_w.max(1)) as u16 + 1;
     let h = text_lines + 2;
-    let toast_area = Rect { x: area.width.saturating_sub(w + 1), y: 1, width: w, height: h };
+    let toast_area = Rect {
+        x: area.width.saturating_sub(w + 1),
+        y: 1,
+        width: w,
+        height: h,
+    };
 
     frame.render_widget(Clear, toast_area);
     let block = Block::default()
@@ -77,7 +87,10 @@ fn render_toast(frame: &mut Frame, app: &App) {
         .border_style(Style::default().fg(color))
         .title(Span::styled(
             label,
-            Style::default().fg(theme::PANEL_BG).bg(color).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::PANEL_BG)
+                .bg(color)
+                .add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().bg(theme::PANEL_BG));
     frame.render_widget(
@@ -92,7 +105,11 @@ fn render_toast(frame: &mut Frame, app: &App) {
 // ── Shared building blocks ────────────────────────────────────────────────
 
 fn panel(title: &str, focused: bool) -> Block<'static> {
-    let border = if focused { theme::BORDER_FOCUSED } else { theme::BORDER };
+    let border = if focused {
+        theme::BORDER_FOCUSED
+    } else {
+        theme::BORDER
+    };
     // No background fill — transparent outline on the app's dark bg, like vortix.
     Block::default()
         .borders(Borders::ALL)
@@ -101,7 +118,11 @@ fn panel(title: &str, focused: bool) -> Block<'static> {
         .title(Span::styled(
             format!(" {title} "),
             Style::default()
-                .fg(if focused { theme::ACCENT_LIGHT } else { theme::TEXT_MUTED })
+                .fg(if focused {
+                    theme::ACCENT_LIGHT
+                } else {
+                    theme::TEXT_MUTED
+                })
                 .add_modifier(Modifier::BOLD),
         ))
 }
@@ -138,16 +159,30 @@ fn footer(frame: &mut Frame, area: Rect, lead: Option<&str>, hints: &[(&str, &st
     if let Some(l) = lead {
         spans.push(Span::styled(
             format!(" {l} "),
-            Style::default().bg(theme::ACCENT).fg(theme::PANEL_BG).add_modifier(Modifier::BOLD),
+            Style::default()
+                .bg(theme::ACCENT)
+                .fg(theme::PANEL_BG)
+                .add_modifier(Modifier::BOLD),
         ));
         spans.push(Span::raw("  "));
     }
     for (k, d) in hints {
-        spans.push(Span::styled(*k, Style::default().fg(theme::KEY_HINT).add_modifier(Modifier::BOLD)));
-        spans.push(Span::styled(format!(" {d}"), Style::default().fg(theme::TEXT_MUTED)));
+        spans.push(Span::styled(
+            *k,
+            Style::default()
+                .fg(theme::KEY_HINT)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!(" {d}"),
+            Style::default().fg(theme::TEXT_MUTED),
+        ));
         spans.push(Span::styled("   ", Style::default().fg(theme::SEPARATOR)));
     }
-    spans.push(Span::styled(format!("│  {status}"), Style::default().fg(theme::ACCENT_LIGHT)));
+    spans.push(Span::styled(
+        format!("│  {status}"),
+        Style::default().fg(theme::ACCENT_LIGHT),
+    ));
     // Transparent (no filled bar) — sits on the app bg like vortix.
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::APP_BG)),
@@ -173,7 +208,11 @@ fn footer(frame: &mut Frame, area: Rect, lead: Option<&str>, hints: &[(&str, &st
 fn render_env_select(frame: &mut Frame, app: &mut App) {
     let n = app.config.envs.len() as u16;
     let block_h = (crate::brand::WORDMARK.len() as u16 + 4) + (n + 2);
-    let area = centered_fixed(58, block_h.min(frame.area().height.saturating_sub(2)), frame.area());
+    let area = centered_fixed(
+        58,
+        block_h.min(frame.area().height.saturating_sub(2)),
+        frame.area(),
+    );
 
     let rows = Layout::vertical([
         Constraint::Length(crate::brand::WORDMARK.len() as u16 + 3), // wordmark + tagline
@@ -187,7 +226,9 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
     for w in crate::brand::WORDMARK {
         brand_lines.push(Line::from(Span::styled(
             *w,
-            Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
         )));
     }
     brand_lines.push(Line::from(Span::styled(
@@ -207,16 +248,24 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
         .enumerate()
         .map(|(i, e)| {
             let mut spans = vec![
-                Span::styled(format!("{}·", i + 1), Style::default().fg(theme::TEXT_MUTED)),
+                Span::styled(
+                    format!("{}·", i + 1),
+                    Style::default().fg(theme::TEXT_MUTED),
+                ),
                 Span::styled(
                     format!("{:<12}", e.name),
-                    Style::default().fg(theme::env_color(e.prod)).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme::env_color(e.prod))
+                        .add_modifier(Modifier::BOLD),
                 ),
             ];
             if e.prod {
                 spans.push(Span::styled(
                     " PROD ",
-                    Style::default().fg(theme::PANEL_BG).bg(theme::ERROR).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme::PANEL_BG)
+                        .bg(theme::ERROR)
+                        .add_modifier(Modifier::BOLD),
                 ));
             }
             spans.push(Span::styled(
@@ -230,7 +279,10 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
     let list = List::new(items)
         .block(panel("select environment", true))
         .highlight_style(
-            Style::default().bg(theme::ROW_SELECTED_BG).fg(theme::ROW_SELECTED_FG).add_modifier(Modifier::BOLD),
+            Style::default()
+                .bg(theme::ROW_SELECTED_BG)
+                .fg(theme::ROW_SELECTED_FG)
+                .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
     frame.render_stateful_widget(list, rows[1], &mut app.env_state);
@@ -255,14 +307,21 @@ fn render_connecting(frame: &mut Frame, app: &App) {
         Line::from(vec![
             Span::styled(
                 format!(" {} ", spinner(app)),
-                Style::default().fg(theme::ACCENT_LIGHT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme::ACCENT_LIGHT)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled("connecting to ", Style::default().fg(theme::TEXT_MUTED)),
             Span::styled(
                 conn.profile.name.clone(),
-                Style::default().fg(theme::env_color(conn.profile.prod)).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme::env_color(conn.profile.prod))
+                    .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!("  {elapsed}s"), Style::default().fg(theme::TEXT_MUTED)),
+            Span::styled(
+                format!("  {elapsed}s"),
+                Style::default().fg(theme::TEXT_MUTED),
+            ),
         ])
         .alignment(Alignment::Center),
     ];
@@ -301,7 +360,8 @@ fn render_main(frame: &mut Frame, app: &mut App) {
     } else {
         // Aligned 2×2 grid: split into rows first, then each row at the same x —
         // so the left/right pane boundaries line up. Left column is narrower.
-        let grid = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]).split(rows[1]);
+        let grid = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(rows[1]);
         let split = [Constraint::Percentage(37), Constraint::Percentage(63)];
         let top = Layout::horizontal(split).split(grid[0]);
         let bot = Layout::horizontal(split).split(grid[1]);
@@ -317,23 +377,53 @@ fn render_main(frame: &mut Frame, app: &mut App) {
     let (pane_name, hints): (&str, &[(&str, &str)]) = match app.focus {
         Panel::Topics => (
             "TOPICS",
-            &[("↑↓", "move"), ("⇥", "pane"), ("/", "find"), ("p", "peek"), ("x", "actions"), ("?", "help")],
+            &[
+                ("↑↓", "move"),
+                ("⇥", "pane"),
+                ("/", "find"),
+                ("p", "peek"),
+                ("x", "actions"),
+                ("?", "help"),
+            ],
         ),
         Panel::Graph => (
             "GRAPH",
-            &[("⇥", "pane"), ("w", "track"), ("G", "groups"), ("x", "actions"), ("?", "help")],
+            &[
+                ("⇥", "pane"),
+                ("w", "track"),
+                ("G", "groups"),
+                ("x", "actions"),
+                ("?", "help"),
+            ],
         ),
         Panel::Detail if app.flip.showing_back() => (
             "CONFIG",
-            &[("f", "flip→detail"), ("⇥", "pane"), ("x", "actions"), ("?", "help")],
+            &[
+                ("f", "flip→detail"),
+                ("⇥", "pane"),
+                ("x", "actions"),
+                ("?", "help"),
+            ],
         ),
         Panel::Detail => (
             "DETAIL",
-            &[("↑↓", "scroll"), ("f", "flip→config"), ("w", "track"), ("p", "peek"), ("x", "actions"), ("?", "help")],
+            &[
+                ("↑↓", "scroll"),
+                ("f", "flip→config"),
+                ("w", "track"),
+                ("p", "peek"),
+                ("x", "actions"),
+                ("?", "help"),
+            ],
         ),
         Panel::Logs => (
             "LOGS",
-            &[("↑↓", "scroll"), ("⇥", "pane"), ("x", "actions"), ("?", "help")],
+            &[
+                ("↑↓", "scroll"),
+                ("⇥", "pane"),
+                ("x", "actions"),
+                ("?", "help"),
+            ],
         ),
     };
     footer(frame, rows[2], Some(pane_name), hints, &app.status);
@@ -342,7 +432,10 @@ fn render_main(frame: &mut Frame, app: &mut App) {
 /// Header = environment switcher strip + counts + live dot. Active env
 /// highlighted; prod red. Press 1-9 to hot-switch. (Brand lives in the footer.)
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
-    let mut spans = vec![Span::styled(" env ", Style::default().fg(theme::TEXT_MUTED))];
+    let mut spans = vec![Span::styled(
+        " env ",
+        Style::default().fg(theme::TEXT_MUTED),
+    )];
 
     let active = app.current_env_index();
     for (i, e) in app.config.envs.iter().enumerate() {
@@ -362,7 +455,10 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     if app.zoom {
-        spans.push(Span::styled("  ⛶ zoomed", Style::default().fg(theme::WARNING)));
+        spans.push(Span::styled(
+            "  ⛶ zoomed",
+            Style::default().fg(theme::WARNING),
+        ));
     }
     spans.push(sep());
     let counts = if app.groups_loaded {
@@ -373,7 +469,9 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     spans.push(Span::styled(counts, Style::default().fg(theme::TEXT_MUTED)));
     spans.push(Span::styled(
         "   ● live",
-        Style::default().fg(theme::SUCCESS).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(theme::SUCCESS)
+            .add_modifier(Modifier::BOLD),
     ));
 
     // Transparent header — no filled bar (vortix look).
@@ -390,7 +488,10 @@ fn render_topics(frame: &mut Frame, area: Rect, app: &mut App, focused: bool) {
         .map(|&i| {
             let (name, parts) = app.topic_row(i);
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{:<34}", truncate(name, 34)), Style::default().fg(theme::TEXT)),
+                Span::styled(
+                    format!("{:<34}", truncate(name, 34)),
+                    Style::default().fg(theme::TEXT),
+                ),
                 Span::styled(format!("{parts:>3}p"), Style::default().fg(theme::ACCENT)),
             ]))
         })
@@ -428,20 +529,35 @@ fn render_detail(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     };
 
     let events = if d.watermarks_loaded {
-        Span::styled(fmt_count(d.total_messages()), Style::default().fg(theme::SUCCESS))
+        Span::styled(
+            fmt_count(d.total_messages()),
+            Style::default().fg(theme::SUCCESS),
+        )
     } else if app.loading_watermarks {
-        Span::styled(format!("{} loading…", spinner(app)), Style::default().fg(theme::WARNING))
+        Span::styled(
+            format!("{} loading…", spinner(app)),
+            Style::default().fg(theme::WARNING),
+        )
     } else {
         Span::styled("w to load", Style::default().fg(theme::TEXT_MUTED))
     };
 
-    let cell = |v: i64| if v < 0 { "—".to_string() } else { v.to_string() };
+    let cell = |v: i64| {
+        if v < 0 {
+            "—".to_string()
+        } else {
+            v.to_string()
+        }
+    };
 
     // Consumer groups actually subscribed to this topic.
     let consumers = {
         let g = app.groups_for_topic(&d.name);
         if !app.groups_loaded {
-            Span::styled(format!("{} loading…", spinner(app)), Style::default().fg(theme::WARNING))
+            Span::styled(
+                format!("{} loading…", spinner(app)),
+                Style::default().fg(theme::WARNING),
+            )
         } else if g.is_empty() {
             Span::styled("none", Style::default().fg(theme::TEXT_MUTED))
         } else {
@@ -454,14 +570,30 @@ fn render_detail(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     };
 
     let mut lines = vec![
-        kv("topic", Span::styled(d.name.clone(), Style::default().fg(theme::ACCENT_LIGHT).add_modifier(Modifier::BOLD))),
-        kv("partitions", Span::styled(d.partitions.len().to_string(), Style::default().fg(theme::TEXT))),
+        kv(
+            "topic",
+            Span::styled(
+                d.name.clone(),
+                Style::default()
+                    .fg(theme::ACCENT_LIGHT)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ),
+        kv(
+            "partitions",
+            Span::styled(
+                d.partitions.len().to_string(),
+                Style::default().fg(theme::TEXT),
+            ),
+        ),
         kv("~events", events),
         kv("consumers", consumers),
         Line::from(""),
         Line::from(Span::styled(
             format!("  {:<3}{:<6}{:>11}{:>11}", "id", "isr", "low", "high"),
-            Style::default().fg(theme::TEXT_MUTED).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::TEXT_MUTED)
+                .add_modifier(Modifier::BOLD),
         )),
     ];
     for p in &d.partitions {
@@ -491,14 +623,19 @@ fn render_groups(frame: &mut Frame, area: Rect, app: &mut App, focused: bool) {
             "  focus this panel (⇥) to load consumer groups".to_string()
         };
         frame.render_widget(
-            Paragraph::new(msg).style(Style::default().fg(theme::TEXT_MUTED)).block(panel("Consumer groups", focused)),
+            Paragraph::new(msg)
+                .style(Style::default().fg(theme::TEXT_MUTED))
+                .block(panel("Consumer groups", focused)),
             area,
         );
         return;
     }
 
-    let header = Row::new(vec!["group", "state", "members", "protocol"])
-        .style(Style::default().fg(theme::TEXT_MUTED).add_modifier(Modifier::BOLD));
+    let header = Row::new(vec!["group", "state", "members", "protocol"]).style(
+        Style::default()
+            .fg(theme::TEXT_MUTED)
+            .add_modifier(Modifier::BOLD),
+    );
     let rows: Vec<Row> = app
         .groups
         .iter()
@@ -527,7 +664,10 @@ fn render_groups(frame: &mut Frame, area: Rect, app: &mut App, focused: bool) {
         ],
     )
     .header(header)
-    .block(panel(&format!("Consumer groups · {}", app.groups.len()), focused))
+    .block(panel(
+        &format!("Consumer groups · {}", app.groups.len()),
+        focused,
+    ))
     .row_highlight_style(hl)
     .highlight_symbol(sym);
     frame.render_stateful_widget(table, area, &mut app.group_state);
@@ -538,10 +678,17 @@ fn render_groups(frame: &mut Frame, area: Rect, app: &mut App, focused: bool) {
 fn render_config(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     let lines: Vec<Line> = match &app.topic_config {
         _ if app.detail.is_none() => {
-            vec![Line::from(Span::styled("  select a topic", Style::default().fg(theme::TEXT_MUTED)))]
+            vec![Line::from(Span::styled(
+                "  select a topic",
+                Style::default().fg(theme::TEXT_MUTED),
+            ))]
         }
         Some((topic, entries))
-            if app.detail.as_ref().map(|d| &d.name == topic).unwrap_or(false) =>
+            if app
+                .detail
+                .as_ref()
+                .map(|d| &d.name == topic)
+                .unwrap_or(false) =>
         {
             entries
                 .iter()
@@ -559,7 +706,9 @@ fn render_config(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         ))],
     };
     frame.render_widget(
-        Paragraph::new(lines).block(panel("Config · f→detail", focused)).wrap(Wrap { trim: false }),
+        Paragraph::new(lines)
+            .block(panel("Config · f→detail", focused))
+            .wrap(Wrap { trim: false }),
         area,
     );
 }
@@ -601,7 +750,12 @@ fn render_graph(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("  now ", Style::default().fg(theme::TEXT_MUTED)),
-            Span::styled(fmt_count(cur as i64), Style::default().fg(theme::SUCCESS).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                fmt_count(cur as i64),
+                Style::default()
+                    .fg(theme::SUCCESS)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("   peak ", Style::default().fg(theme::TEXT_MUTED)),
             Span::styled(fmt_count(peak as i64), Style::default().fg(theme::ACCENT)),
             Span::styled("   /3.5s window", Style::default().fg(theme::SEPARATOR)),
@@ -636,7 +790,10 @@ fn render_flip_pane(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
 
     // Repaint the app bg over the whole slot (erasing the wider previous face)
     // rather than Clear, which would drop back to the terminal's default bg.
-    frame.render_widget(Block::default().style(Style::default().bg(theme::APP_BG)), area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(theme::APP_BG)),
+        area,
+    );
     let narrow = narrowed_rect(area, app.flip.width_ratio());
     if narrow.width >= 24 {
         render_face(frame, narrow);
@@ -646,7 +803,8 @@ fn render_flip_pane(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         let mid = narrow.x + narrow.width / 2;
         for y in narrow.y..narrow.y.saturating_add(narrow.height) {
             if let Some(cell) = buf.cell_mut((mid, y)) {
-                cell.set_symbol("│").set_style(Style::default().fg(theme::ACCENT_LIGHT));
+                cell.set_symbol("│")
+                    .set_style(Style::default().fg(theme::ACCENT_LIGHT));
             }
         }
     }
@@ -669,11 +827,19 @@ fn render_logs(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     let start = end.saturating_sub(inner_h);
 
     let lines: Vec<Line> = if total == 0 {
-        vec![Line::from(Span::styled("  no activity yet", Style::default().fg(theme::TEXT_MUTED)))]
+        vec![Line::from(Span::styled(
+            "  no activity yet",
+            Style::default().fg(theme::TEXT_MUTED),
+        ))]
     } else {
         app.logs[start..end]
             .iter()
-            .map(|l| Line::from(Span::styled(format!("  {l}"), Style::default().fg(theme::TEXT_MUTED))))
+            .map(|l| {
+                Line::from(Span::styled(
+                    format!("  {l}"),
+                    Style::default().fg(theme::TEXT_MUTED),
+                ))
+            })
             .collect()
     };
     let title = if app.logs_scroll > 0 {
@@ -698,7 +864,13 @@ fn render_groups_screen(frame: &mut Frame, app: &mut App) {
         frame,
         rows[2],
         Some("GROUPS"),
-        &[("↑↓", "move"), ("d", "delete"), ("x", "actions"), ("esc", "back"), ("?", "help")],
+        &[
+            ("↑↓", "move"),
+            ("d", "delete"),
+            ("x", "actions"),
+            ("esc", "back"),
+            ("?", "help"),
+        ],
         &app.status,
     );
 }
@@ -711,11 +883,23 @@ fn render_modal(frame: &mut Frame, app: &App) {
         Modal::Help => {
             let row = |keys: &str, desc: &str| {
                 Line::from(vec![
-                    Span::styled(format!("  {keys:<14}"), Style::default().fg(theme::KEY_HINT).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("  {keys:<14}"),
+                        Style::default()
+                            .fg(theme::KEY_HINT)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(desc.to_string(), Style::default().fg(theme::TEXT)),
                 ])
             };
-            let head = |t: &str| Line::from(Span::styled(format!("  {t}"), Style::default().fg(theme::ACCENT_LIGHT).add_modifier(Modifier::BOLD)));
+            let head = |t: &str| {
+                Line::from(Span::styled(
+                    format!("  {t}"),
+                    Style::default()
+                        .fg(theme::ACCENT_LIGHT)
+                        .add_modifier(Modifier::BOLD),
+                ))
+            };
             popup(
                 frame,
                 "Shortcuts",
@@ -754,9 +938,15 @@ fn render_modal(frame: &mut Frame, app: &App) {
             "Error",
             vec![
                 Line::from(""),
-                Line::from(Span::styled(format!("  {msg}"), Style::default().fg(theme::ERROR))),
+                Line::from(Span::styled(
+                    format!("  {msg}"),
+                    Style::default().fg(theme::ERROR),
+                )),
                 Line::from(""),
-                Line::from(Span::styled("  press any key to dismiss", Style::default().fg(theme::TEXT_MUTED))),
+                Line::from(Span::styled(
+                    "  press any key to dismiss",
+                    Style::default().fg(theme::TEXT_MUTED),
+                )),
             ],
             theme::ERROR,
             9,
@@ -764,7 +954,9 @@ fn render_modal(frame: &mut Frame, app: &App) {
         Modal::Create(f) => {
             let field = |label: &str, val: &str, focused: bool| {
                 let vstyle = if focused {
-                    Style::default().fg(theme::ACCENT_LIGHT).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(theme::ACCENT_LIGHT)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(theme::TEXT)
                 };
@@ -785,7 +977,10 @@ fn render_modal(frame: &mut Frame, app: &App) {
                     field("partitions", &f.partitions, f.focus == 1),
                     field("replication", &f.replication, f.focus == 2),
                     Line::from(""),
-                    Line::from(Span::styled("  ⇥ next   ↵ create   esc cancel", Style::default().fg(theme::TEXT_MUTED))),
+                    Line::from(Span::styled(
+                        "  ⇥ next   ↵ create   esc cancel",
+                        Style::default().fg(theme::TEXT_MUTED),
+                    )),
                 ],
                 theme::ACCENT,
                 9,
@@ -802,10 +997,18 @@ fn render_modal(frame: &mut Frame, app: &App) {
                 ]),
                 Line::from(vec![
                     Span::styled("  total  ", Style::default().fg(theme::TEXT_MUTED)),
-                    Span::styled(format!("{}▌", f.total), Style::default().fg(theme::ACCENT_LIGHT).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("{}▌", f.total),
+                        Style::default()
+                            .fg(theme::ACCENT_LIGHT)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
                 Line::from(""),
-                Line::from(Span::styled("  partitions can only increase   ↵ apply   esc cancel", Style::default().fg(theme::WARNING))),
+                Line::from(Span::styled(
+                    "  partitions can only increase   ↵ apply   esc cancel",
+                    Style::default().fg(theme::WARNING),
+                )),
             ],
             theme::ACCENT,
             9,
@@ -818,8 +1021,16 @@ fn render_modal(frame: &mut Frame, app: &App) {
             let mut lines = vec![
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled(format!("  delete {noun} "), Style::default().fg(theme::TEXT_MUTED)),
-                    Span::styled(f.target.clone(), Style::default().fg(theme::ERROR).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("  delete {noun} "),
+                        Style::default().fg(theme::TEXT_MUTED),
+                    ),
+                    Span::styled(
+                        f.target.clone(),
+                        Style::default()
+                            .fg(theme::ERROR)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(" ?", Style::default().fg(theme::TEXT_MUTED)),
                 ]),
                 Line::from(""),
@@ -827,16 +1038,27 @@ fn render_modal(frame: &mut Frame, app: &App) {
             if f.is_prod {
                 lines.push(Line::from(Span::styled(
                     format!("  ⚠ PROD — type the {noun} name to confirm:"),
-                    Style::default().fg(theme::ERROR).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme::ERROR)
+                        .add_modifier(Modifier::BOLD),
                 )));
                 lines.push(Line::from(vec![
                     Span::raw("  "),
-                    Span::styled(format!("{}▌", f.confirm), Style::default().fg(theme::ACCENT_LIGHT)),
+                    Span::styled(
+                        format!("{}▌", f.confirm),
+                        Style::default().fg(theme::ACCENT_LIGHT),
+                    ),
                 ]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled("  ↵ confirm   esc cancel", Style::default().fg(theme::TEXT_MUTED))));
+                lines.push(Line::from(Span::styled(
+                    "  ↵ confirm   esc cancel",
+                    Style::default().fg(theme::TEXT_MUTED),
+                )));
             } else {
-                lines.push(Line::from(Span::styled("  ↵ confirm delete   esc cancel", Style::default().fg(theme::WARNING))));
+                lines.push(Line::from(Span::styled(
+                    "  ↵ confirm delete   esc cancel",
+                    Style::default().fg(theme::WARNING),
+                )));
             }
             let h = lines.len() as u16 + 2;
             popup(frame, &format!("Delete {noun}"), lines, theme::ERROR, h);
@@ -847,18 +1069,29 @@ fn render_modal(frame: &mut Frame, app: &App) {
             for (i, (k, label)) in items.iter().enumerate() {
                 let selected = i == *sel;
                 let base = if selected {
-                    Style::default().bg(theme::ROW_SELECTED_BG).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .bg(theme::ROW_SELECTED_BG)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
                 };
                 lines.push(Line::from(vec![
-                    Span::styled(if selected { "  ▶ " } else { "    " }, base.fg(theme::ACCENT_LIGHT)),
-                    Span::styled(format!("{k}  "), base.fg(theme::KEY_HINT).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        if selected { "  ▶ " } else { "    " },
+                        base.fg(theme::ACCENT_LIGHT),
+                    ),
+                    Span::styled(
+                        format!("{k}  "),
+                        base.fg(theme::KEY_HINT).add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled((*label).to_string(), base.fg(theme::TEXT)),
                 ]));
             }
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled("  ↑↓ select · ↵ run · esc close", Style::default().fg(theme::TEXT_MUTED))));
+            lines.push(Line::from(Span::styled(
+                "  ↑↓ select · ↵ run · esc close",
+                Style::default().fg(theme::TEXT_MUTED),
+            )));
             let h = lines.len() as u16 + 2;
             popup(frame, "Actions", lines, theme::ACCENT, h);
         }
@@ -879,8 +1112,13 @@ fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: us
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(theme::ACCENT))
         .title(Span::styled(
-            format!(" Peek · {} events   ↑↓ select · y copy payload · Y copy key · esc close ", records.len()),
-            Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+            format!(
+                " Peek · {} events   ↑↓ select · y copy payload · Y copy key · esc close ",
+                records.len()
+            ),
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
         ))
         .style(Style::default().bg(theme::PANEL_BG));
     let inner = outer.inner(area);
@@ -888,46 +1126,79 @@ fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: us
 
     if records.is_empty() {
         frame.render_widget(
-            Paragraph::new("  no events in this topic").style(Style::default().fg(theme::TEXT_MUTED)),
+            Paragraph::new("  no events in this topic")
+                .style(Style::default().fg(theme::TEXT_MUTED)),
             inner,
         );
         return;
     }
 
-    let parts = Layout::vertical([Constraint::Percentage(45), Constraint::Percentage(55)]).split(inner);
+    let parts =
+        Layout::vertical([Constraint::Percentage(45), Constraint::Percentage(55)]).split(inner);
 
     // ── Event list (windowed around the selection) ──
     let list_h = parts[0].height as usize;
-    let start = sel.saturating_sub(list_h / 2).min(records.len().saturating_sub(list_h).max(0));
+    let start = sel
+        .saturating_sub(list_h / 2)
+        .min(records.len().saturating_sub(list_h));
     let mut list_lines = Vec::new();
     for (i, r) in records.iter().enumerate().skip(start).take(list_h) {
         let selected = i == sel;
         let base = if selected {
-            Style::default().bg(theme::ROW_SELECTED_BG).add_modifier(Modifier::BOLD)
+            Style::default()
+                .bg(theme::ROW_SELECTED_BG)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
         list_lines.push(Line::from(vec![
-            Span::styled(if selected { " ▶ " } else { "   " }, base.fg(theme::ACCENT_LIGHT)),
-            Span::styled(format!("p{:<2} @{:<10} ", r.partition, r.offset), base.fg(theme::ACCENT)),
-            Span::styled(format!("{:<20}", truncate(&r.key, 18)), base.fg(theme::WARNING)),
-            Span::styled(truncate(&r.payload, (parts[0].width as usize).saturating_sub(40)), base.fg(theme::TEXT)),
+            Span::styled(
+                if selected { " ▶ " } else { "   " },
+                base.fg(theme::ACCENT_LIGHT),
+            ),
+            Span::styled(
+                format!("p{:<2} @{:<10} ", r.partition, r.offset),
+                base.fg(theme::ACCENT),
+            ),
+            Span::styled(
+                format!("{:<20}", truncate(&r.key, 18)),
+                base.fg(theme::WARNING),
+            ),
+            Span::styled(
+                truncate(&r.payload, (parts[0].width as usize).saturating_sub(40)),
+                base.fg(theme::TEXT),
+            ),
         ]));
     }
     frame.render_widget(Paragraph::new(list_lines), parts[0]);
 
     // ── Selected payload (pretty-printed if JSON) ──
     let r = &records[sel];
-    let ts = r.timestamp.map(|t| t.to_string()).unwrap_or_else(|| "—".into());
+    let ts = r
+        .timestamp
+        .map(|t| t.to_string())
+        .unwrap_or_else(|| "—".into());
     let mut detail = vec![Line::from(vec![
         Span::styled("─ payload  ", Style::default().fg(theme::SEPARATOR)),
         Span::styled(
-            format!("partition {} · offset {} · ts {} · key {}", r.partition, r.offset, ts, if r.key.is_empty() { "∅" } else { &r.key }),
+            format!(
+                "partition {} · offset {} · ts {} · key {}",
+                r.partition,
+                r.offset,
+                ts,
+                if r.key.is_empty() { "∅" } else { &r.key }
+            ),
             Style::default().fg(theme::TEXT_MUTED),
         ),
     ])];
-    for line in pretty_json(&r.payload).lines().take(parts[1].height.saturating_sub(1) as usize) {
-        detail.push(Line::from(Span::styled(line.to_string(), Style::default().fg(theme::TEXT))));
+    for line in pretty_json(&r.payload)
+        .lines()
+        .take(parts[1].height.saturating_sub(1) as usize)
+    {
+        detail.push(Line::from(Span::styled(
+            line.to_string(),
+            Style::default().fg(theme::TEXT),
+        )));
     }
     frame.render_widget(Paragraph::new(detail).wrap(Wrap { trim: false }), parts[1]);
 }
@@ -949,22 +1220,36 @@ fn popup(frame: &mut Frame, title: &str, lines: Vec<Line>, accent: Color, rows: 
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(accent))
-        .title(Span::styled(format!(" {title} "), Style::default().fg(accent).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            format!(" {title} "),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ))
         .style(Style::default().bg(theme::PANEL_BG));
-    frame.render_widget(Paragraph::new(lines).block(b).wrap(Wrap { trim: false }), area);
+    frame.render_widget(
+        Paragraph::new(lines).block(b).wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 // ── Geometry + text helpers ───────────────────────────────────────────────
 
 fn centered(pct_x: u16, pct_y: u16, r: Rect) -> Rect {
-    let [v] = Layout::vertical([Constraint::Percentage(pct_y)]).flex(Flex::Center).areas(r);
-    let [h] = Layout::horizontal([Constraint::Percentage(pct_x)]).flex(Flex::Center).areas(v);
+    let [v] = Layout::vertical([Constraint::Percentage(pct_y)])
+        .flex(Flex::Center)
+        .areas(r);
+    let [h] = Layout::horizontal([Constraint::Percentage(pct_x)])
+        .flex(Flex::Center)
+        .areas(v);
     h
 }
 
 fn centered_fixed(w: u16, h: u16, r: Rect) -> Rect {
-    let [v] = Layout::vertical([Constraint::Length(h)]).flex(Flex::Center).areas(r);
-    let [out] = Layout::horizontal([Constraint::Length(w)]).flex(Flex::Center).areas(v);
+    let [v] = Layout::vertical([Constraint::Length(h)])
+        .flex(Flex::Center)
+        .areas(r);
+    let [out] = Layout::horizontal([Constraint::Length(w)])
+        .flex(Flex::Center)
+        .areas(v);
     out
 }
 
@@ -1019,14 +1304,21 @@ mod tests {
     }
 
     fn demo_app() -> App {
-        let cfg = Config { envs: vec![env("stag", false), env("prod", true)] };
+        let cfg = Config {
+            envs: vec![env("stag", false), env("prod", true)],
+        };
         let mut app = App::new(cfg);
         app.connected = Some(env("stag", false));
         app.meta = (0..12)
             .map(|i| TopicMeta {
                 name: format!("service.events.v{i}"),
                 partitions: (0..(3 + i % 4))
-                    .map(|id| PartMeta { id, leader: 1 + id % 3, replicas: 3, isr: 3 })
+                    .map(|id| PartMeta {
+                        id,
+                        leader: 1 + id % 3,
+                        replicas: 3,
+                        isr: 3,
+                    })
                     .collect(),
             })
             .collect();
@@ -1034,13 +1326,32 @@ mod tests {
         app.detail = Some(TopicDetail {
             name: "service.events.v2".into(),
             partitions: (0..4)
-                .map(|id| PartitionInfo { id, leader: 1 + id % 3, replicas: 3, isr: 3, low: 0, high: 148_233 + id as i64 * 5000 })
+                .map(|id| PartitionInfo {
+                    id,
+                    leader: 1 + id % 3,
+                    replicas: 3,
+                    isr: 3,
+                    low: 0,
+                    high: 148_233 + id as i64 * 5000,
+                })
                 .collect(),
             watermarks_loaded: true,
         });
         app.groups = vec![
-            crate::kafka::GroupSummary { name: "billing-consumer".into(), state: "Stable".into(), members: 4, protocol: "range".into(), topics: vec!["service.events.v2".into()] },
-            crate::kafka::GroupSummary { name: "analytics-etl".into(), state: "Stable".into(), members: 2, protocol: "range".into(), topics: vec!["service.events.v2".into(), "service.events.v5".into()] },
+            crate::kafka::GroupSummary {
+                name: "billing-consumer".into(),
+                state: "Stable".into(),
+                members: 4,
+                protocol: "range".into(),
+                topics: vec!["service.events.v2".into()],
+            },
+            crate::kafka::GroupSummary {
+                name: "analytics-etl".into(),
+                state: "Stable".into(),
+                members: 2,
+                protocol: "range".into(),
+                topics: vec!["service.events.v2".into(), "service.events.v5".into()],
+            },
         ];
         app.groups_loaded = true;
         app.topic_config = Some((
@@ -1056,7 +1367,9 @@ mod tests {
             ],
         ));
         app.rate_topic = Some("service.events.v2".into());
-        app.rate = vec![12, 40, 33, 58, 71, 49, 88, 64, 95, 120, 77, 60, 44, 90, 110, 130, 85, 52];
+        app.rate = vec![
+            12, 40, 33, 58, 71, 49, 88, 64, 95, 120, 77, 60, 44, 90, 110, 130, 85, 52,
+        ];
         app.logs = vec![
             "10:02:11  connected to stag · 12 topics".into(),
             "10:02:19  tracking service.events.v2 — graph is live".into(),
@@ -1100,8 +1413,20 @@ mod tests {
         app.modal = Modal::None;
         app.screen = Screen::Groups;
         app.groups = vec![
-            crate::kafka::GroupSummary { name: "billing-consumer".into(), state: "Stable".into(), members: 4, protocol: "range".into(), topics: vec!["service.events.v2".into()] },
-            crate::kafka::GroupSummary { name: "audit-sink".into(), state: "Empty".into(), members: 0, protocol: String::new(), topics: vec![] },
+            crate::kafka::GroupSummary {
+                name: "billing-consumer".into(),
+                state: "Stable".into(),
+                members: 4,
+                protocol: "range".into(),
+                topics: vec!["service.events.v2".into()],
+            },
+            crate::kafka::GroupSummary {
+                name: "audit-sink".into(),
+                state: "Empty".into(),
+                members: 0,
+                protocol: String::new(),
+                topics: vec![],
+            },
         ];
         app.groups_loaded = true;
         app.group_state.select(Some(0));
@@ -1133,8 +1458,20 @@ mod tests {
         app.screen = Screen::Main;
         app.modal = Modal::Peek {
             records: vec![
-                EventRecord { partition: 0, offset: 148231, key: "user-42".into(), payload: r#"{"event":"click","x":10,"y":20}"#.into(), timestamp: Some(1784405965782) },
-                EventRecord { partition: 1, offset: 153230, key: "user-7".into(), payload: r#"{"event":"scroll","depth":3}"#.into(), timestamp: Some(1784405969111) },
+                EventRecord {
+                    partition: 0,
+                    offset: 148231,
+                    key: "user-42".into(),
+                    payload: r#"{"event":"click","x":10,"y":20}"#.into(),
+                    timestamp: Some(1784405965782),
+                },
+                EventRecord {
+                    partition: 1,
+                    offset: 153230,
+                    key: "user-7".into(),
+                    payload: r#"{"event":"scroll","depth":3}"#.into(),
+                    timestamp: Some(1784405969111),
+                },
             ],
             sel: 0,
         };
