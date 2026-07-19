@@ -5,7 +5,7 @@ title: ""
 labels: enhancement
 ---
 
-**What would you like franz to do?**
+**What would you like kitz to do?**
 
 **Why - what's the workflow it unblocks?**
 

@@ -1,14 +1,19 @@
-> ⚠️ **Work in progress · macOS only for now.**
-# franz
+# kitz
+
+> your Kafka desk clerk
 
 A terminal UI for **AWS MSK** with first-class **IAM auth**, multi-environment
 switching, and live topic / consumer-group inspection. The wedge no other Kafka
-TUI has: franz authenticates to MSK with your `~/.aws` creds (SASL OAUTHBEARER /
-SigV4) - no broker-string, cert, or JAAS juggling.
+TUI has: kitz authenticates to MSK with your `~/.aws` creds (SASL OAUTHBEARER /
+SigV4) — no broker-string, cert, or JAAS juggling.
 
-[![test](https://github.com/Harry-kp/franz/actions/workflows/test.yml/badge.svg)](https://github.com/Harry-kp/franz/actions/workflows/test.yml)
-[![crates.io](https://img.shields.io/crates/v/franz.svg)](https://crates.io/crates/franz)
-[![license](https://img.shields.io/crates/l/franz.svg)](./LICENSE)
+> ⚠️ **Work in progress · macOS only for now.** Linux/Windows builds are
+> planned. The prebuilt macOS binary is fully self-contained (librdkafka and
+> OpenSSL are baked in) — nothing to install alongside it.
+
+[![test](https://github.com/Harry-kp/kitz/actions/workflows/test.yml/badge.svg)](https://github.com/Harry-kp/kitz/actions/workflows/test.yml)
+[![crates.io](https://img.shields.io/crates/v/kitz.svg)](https://crates.io/crates/kitz)
+[![license](https://img.shields.io/crates/l/kitz.svg)](./LICENSE)
 
 ## Features
 
@@ -23,7 +28,7 @@ SigV4) - no broker-string, cert, or JAAS juggling.
 - **Peek** - browse recent events with pretty-printed JSON; copy payload/key.
 - **Consumer groups** - full-screen view (`G`); delete with confirmation.
 - **Admin** - create topic, add partitions, delete topic/group.
-- **`franz doctor <env>`** - layer-by-layer connectivity diagnosis.
+- **`kitz doctor <env>`** - layer-by-layer connectivity diagnosis.
 
 ## Install
 
@@ -31,13 +36,13 @@ SigV4) - no broker-string, cert, or JAAS juggling.
 
 ```sh
 # npm
-npm install -g @harry-kp/franz
+npm install -g @harry-kp/kitz
 
 # Homebrew
-brew install Harry-kp/tap/franz
+brew install Harry-kp/tap/kitz
 
 # curl
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Harry-kp/franz/releases/latest/download/franz-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Harry-kp/kitz/releases/latest/download/kitz-installer.sh | sh
 ```
 
 These ship a self-contained macOS binary - librdkafka and OpenSSL are baked in,
@@ -48,18 +53,18 @@ Xcode Command Line Tools:
 
 ```sh
 brew install cmake
-cargo install franz
+cargo install kitz
 ```
 
 ## Quick start
 
 ```sh
-cp franz.toml.example franz.toml   # then edit: your brokers, regions, auth
+cp kitz.toml.example kitz.toml   # then edit: your brokers, regions, auth
 export AWS_PROFILE=your-profile    # or set aws_profile per-env in the toml
-franz
+kitz
 ```
 
-`franz.toml` (also read from `~/.config/franz/config.toml`):
+`kitz.toml` (also read from `~/.config/kitz/config.toml`):
 
 ```toml
 [[env]]
@@ -70,9 +75,9 @@ auth = "plaintext"   # 9092=plaintext · 9094=tls · 9098=iam
 prod = false
 ```
 
-> **Note:** MSK brokers are usually private VPC IPs - run franz somewhere that
+> **Note:** MSK brokers are usually private VPC IPs - run kitz somewhere that
 > can route to them (on the VPC's VPN, or a bastion inside the VPC). Stuck?
-> `franz doctor <env>` tells you whether it's network, creds, or protocol.
+> `kitz doctor <env>` tells you whether it's network, creds, or protocol.
 
 ## Keys
 
@@ -92,7 +97,7 @@ prod = false
 
 ## Building from source
 
-franz links **librdkafka** (built from source via cmake):
+kitz links **librdkafka** (built from source via cmake):
 
 ```sh
 brew install cmake        # macOS

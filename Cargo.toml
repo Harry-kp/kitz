@@ -1,18 +1,18 @@
 [package]
-name = "franz"
+name = "kitz"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
 description = "Terminal UI for AWS MSK Kafka with IAM auth, multi-environment switching, and live topic and consumer-group inspection"
 authors = ["Harry KP <harrykp@users.noreply.github.com>"]
 license = "MIT"
-repository = "https://github.com/Harry-kp/franz"
-homepage = "https://github.com/Harry-kp/franz"
-documentation = "https://github.com/Harry-kp/franz"
+repository = "https://github.com/Harry-kp/kitz"
+homepage = "https://github.com/Harry-kp/kitz"
+documentation = "https://github.com/Harry-kp/kitz"
 readme = "README.md"
 keywords = ["kafka", "msk", "tui", "aws", "terminal"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = [".github/", "franz.toml", "*.png", "docs/"]
+exclude = [".github/", "kitz.toml", "*.png", "docs/"]
 
 [dependencies]
 # Kafka - vendored librdkafka via cmake, with OpenSSL statically vendored

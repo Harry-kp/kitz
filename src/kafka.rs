@@ -151,9 +151,9 @@ impl KafkaClient {
         if let Some(p) = &profile.aws_profile {
             std::env::set_var("AWS_PROFILE", p);
         }
-        // Debug logging to a file is opt-in via FRANZ_DEBUG=1 so a normal run
+        // Debug logging to a file is opt-in via KITZ_DEBUG=1 so a normal run
         // stays quiet; the file always exists so warnings/errors are captured.
-        let debug = std::env::var("FRANZ_DEBUG").is_ok();
+        let debug = std::env::var("KITZ_DEBUG").is_ok();
         let ctx = MskContext {
             region: profile.region.clone(),
             log_file: open_log_file(),
@@ -355,9 +355,9 @@ impl KafkaClient {
 
     /// Peek the last `limit` events across a topic's partitions.
     pub fn peek(&self, topic: &str, limit: usize) -> Result<Vec<EventRecord>> {
-        let debug = std::env::var("FRANZ_DEBUG").is_ok();
+        let debug = std::env::var("KITZ_DEBUG").is_ok();
         let peeker: BaseConsumer<MskContext> = base_config(&self.profile, debug)
-            .set("group.id", "franz-peek")
+            .set("group.id", "kitz-peek")
             .set("enable.auto.commit", "false")
             .create_with_context(self.ctx.clone())
             .context("creating peek consumer")?;
@@ -532,7 +532,7 @@ fn ca_bundle() -> Option<String> {
 }
 
 fn log_path() -> Option<PathBuf> {
-    let dir = dirs::cache_dir()?.join("franz");
+    let dir = dirs::cache_dir()?.join("kitz");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join("mskui.log"))
 }

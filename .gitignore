@@ -2,9 +2,9 @@
 /target
 
 # Local cluster config - contains real broker hostnames; never commit.
-# Ship franz.toml.example instead.
-/franz.toml
-franz.toml
+# Ship kitz.toml.example instead.
+/kitz.toml
+kitz.toml
 
 # Logs / scratch
 *.log

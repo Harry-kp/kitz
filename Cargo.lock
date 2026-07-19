@@ -1076,27 +1076,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "franz"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arboard",
- "aws-config",
- "aws-msk-iam-sasl-signer",
- "aws-types",
- "clap",
- "crossterm",
- "dirs",
- "ratatui",
- "ratatui-flip-panel",
- "rdkafka",
- "serde",
- "serde_json",
- "tokio",
- "toml",
-]
-
-[[package]]
 name = "fs_extra"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1690,6 +1669,27 @@ checksum = "bde5057d6143cc94e861d90f591b9303d6716c6b9602309150bd068853c10899"
 dependencies = [
  "hashbrown 0.16.1",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "kitz"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "aws-config",
+ "aws-msk-iam-sasl-signer",
+ "aws-types",
+ "clap",
+ "crossterm",
+ "dirs",
+ "ratatui",
+ "ratatui-flip-panel",
+ "rdkafka",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
 ]
 
 [[package]]

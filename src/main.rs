@@ -1,4 +1,4 @@
-//! franz - an IAM-auth-native, multi-environment terminal UI for AWS MSK.
+//! kitz - an IAM-auth-native, multi-environment terminal UI for AWS MSK.
 //!
 //! Launch → pick an environment → inspect topics, partitions, consumer groups,
 //! peek events, and do topic admin (create / add partitions / delete) with a
@@ -21,13 +21,13 @@ use crossterm::event::{self, Event};
 use crate::app::App;
 use crate::config::Config;
 
-/// franz — your Kafka desk clerk.
+/// kitz — your Kafka desk clerk.
 ///
 /// A terminal UI for AWS MSK with IAM auth, multi-environment switching, and
 /// live topic / consumer-group inspection. Run with no arguments to launch the
-/// TUI. Config is read from ./franz.toml or ~/.config/franz/config.toml.
+/// TUI. Config is read from ./kitz.toml or ~/.config/kitz/config.toml.
 #[derive(Parser)]
-#[command(name = "franz", version, about, long_about = None)]
+#[command(name = "kitz", version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

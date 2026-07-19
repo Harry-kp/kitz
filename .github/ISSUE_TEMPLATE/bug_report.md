@@ -15,11 +15,11 @@ A clear description of the bug.
 What you expected instead.
 
 **Environment**
-- franz version: `franz --version`
+- kitz version: `kitz --version`
 - macOS version:
 - Install method: npm / brew / curl / cargo
 - Cluster auth: iam / tls / plaintext
 
-**`franz doctor <env>` output** (redact broker hostnames)
+**`kitz doctor <env>` output** (redact broker hostnames)
 ```
 ```

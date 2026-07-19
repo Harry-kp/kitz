@@ -38,10 +38,10 @@ pub struct Config {
 }
 
 impl Config {
-    /// Loads config, preferring `./franz.toml` then `~/.config/franz/config.toml`.
+    /// Loads config, preferring `./kitz.toml` then `~/.config/kitz/config.toml`.
     pub fn load() -> Result<Self> {
         let path = Self::locate()
-            .context("no config found - create ./franz.toml or ~/.config/franz/config.toml")?;
+            .context("no config found - create ./kitz.toml or ~/.config/kitz/config.toml")?;
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
         let cfg: Config =
@@ -51,11 +51,11 @@ impl Config {
     }
 
     fn locate() -> Option<PathBuf> {
-        let local = PathBuf::from("franz.toml");
+        let local = PathBuf::from("kitz.toml");
         if local.exists() {
             return Some(local);
         }
-        let global = dirs::config_dir()?.join("franz").join("config.toml");
+        let global = dirs::config_dir()?.join("kitz").join("config.toml");
         global.exists().then_some(global)
     }
 }

@@ -1,7 +1,7 @@
 //! Rendering. Reads `App`, draws frames. Dense single-line header, plain
-//! titled panels on a dark background, a keybinding footer, animated spinners
-//! - and a bird's-eye dashboard: Topics, a topic Detail/Config flip pane, a
-//! live events Graph, and Logs. The focused panel gets a cyan border; z zooms.
+//! titled panels on a dark background, a keybinding footer, animated spinners,
+//! and a bird's-eye dashboard: Topics, a topic Detail/Config flip pane, a live
+//! events Graph, and Logs. The focused panel gets a cyan border; `z` zooms.
 //!
 //! Rendering is pure and never blocks: expensive data (watermarks, groups)
 //! shows a "loading…" placeholder until the worker delivers it.
