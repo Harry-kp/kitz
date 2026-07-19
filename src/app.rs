@@ -51,7 +51,7 @@ pub enum ToastLevel {
     Error,
 }
 
-/// A transient top-right notification (vortix-style). Auto-expires.
+/// A transient top-right notification. Auto-expires.
 pub struct Toast {
     pub message: String,
     pub level: ToastLevel,
@@ -67,7 +67,7 @@ pub enum Modal {
         records: Vec<EventRecord>,
         sel: usize,
     },
-    /// Context action menu (vortix-style): every action for the current
+    /// Context action menu: every action for the current
     /// screen/pane. Keeps the footer to essentials.
     Actions {
         items: Vec<(char, &'static str)>,
@@ -146,7 +146,7 @@ pub struct App {
 
     pub peeking: bool,
 
-    /// Activity/debug log (vortix-style). Newest last; capped.
+    /// Activity/debug log. Newest last; capped.
     pub logs: Vec<String>,
     /// Lines scrolled back from the newest (0 = pinned to newest).
     pub logs_scroll: u16,

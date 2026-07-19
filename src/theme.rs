@@ -1,15 +1,15 @@
-//! Color palette borrowed from vortix (Synthwave): slate panels, cyan accents,
+//! Color palette (Synthwave): slate panels, cyan accents,
 //! coral/emerald status. Kept as a flat set of consts - the app is small enough
 //! not to need runtime theme switching yet.
 
 use ratatui::style::Color;
 
-// Backgrounds. Dashboard panels are transparent outlines on APP_BG (vortix
+// Backgrounds. Dashboard panels are transparent outlines on APP_BG (outline
 // look); PANEL_BG is only for opaque overlays (modals, toast, connecting).
 pub const APP_BG: Color = Color::Rgb(15, 23, 36);
 pub const PANEL_BG: Color = Color::Rgb(30, 41, 59);
 
-// Separator between header/footer segments (vortix nord polar-night-4).
+// Separator between header/footer segments (nord polar-night-4).
 pub const SEPARATOR: Color = Color::Rgb(76, 86, 106);
 
 // Accents

@@ -1,7 +1,7 @@
-//! Rendering. Reads `App`, draws frames. Styling follows vortix: a dense
-//! single-line header, rounded titled panels, a keybinding footer, animated
-//! spinners - and a bird's-eye dashboard where Topics, Detail, and Groups are
-//! all visible at once. The focused panel gets a cyan border; z zooms it.
+//! Rendering. Reads `App`, draws frames. Dense single-line header, plain
+//! titled panels on a dark background, a keybinding footer, animated spinners
+//! - and a bird's-eye dashboard: Topics, a topic Detail/Config flip pane, a
+//! live events Graph, and Logs. The focused panel gets a cyan border; z zooms.
 //!
 //! Rendering is pure and never blocks: expensive data (watermarks, groups)
 //! shows a "loading…" placeholder until the worker delivers it.
@@ -55,7 +55,7 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     render_toast(frame, app);
 }
 
-/// Transient top-right notification (carried from vortix).
+/// Transient top-right notification.
 fn render_toast(frame: &mut Frame, app: &App) {
     let Some(t) = &app.toast else { return };
     let area = frame.area();
@@ -110,7 +110,7 @@ fn panel(title: &str, focused: bool) -> Block<'static> {
     } else {
         theme::BORDER
     };
-    // No background fill - transparent outline on the app's dark bg, like vortix.
+    // No background fill - transparent outline on the app's dark bg.
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
@@ -183,7 +183,7 @@ fn footer(frame: &mut Frame, area: Rect, lead: Option<&str>, hints: &[(&str, &st
         format!("│  {status}"),
         Style::default().fg(theme::ACCENT_LIGHT),
     ));
-    // Transparent (no filled bar) - sits on the app bg like vortix.
+    // Transparent (no filled bar) - sits on the app bg.
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::APP_BG)),
         area,
@@ -358,11 +358,11 @@ fn render_main(frame: &mut Frame, app: &mut App) {
             Panel::Logs => render_logs(frame, rows[1], app, true),
         }
     } else {
-        // Aligned 2×2 grid: split into rows first, then each row at the same x -
-        // so the left/right pane boundaries line up. Left column is narrower.
-        let grid = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
+        // Aligned 2×2 grid: left column 32%, top row 55% (both columns share
+        // the split so the boundaries line up).
+        let grid = Layout::vertical([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(rows[1]);
-        let split = [Constraint::Percentage(37), Constraint::Percentage(63)];
+        let split = [Constraint::Percentage(32), Constraint::Percentage(68)];
         let top = Layout::horizontal(split).split(grid[0]);
         let bot = Layout::horizontal(split).split(grid[1]);
 
@@ -509,7 +509,7 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             .add_modifier(Modifier::BOLD),
     ));
 
-    // Transparent header - no filled bar (vortix look).
+    // Transparent header - no filled bar.
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::APP_BG)),
         area,
@@ -624,21 +624,35 @@ fn render_detail(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         kv("~events", events),
         kv("consumers", consumers),
         Line::from(""),
-        Line::from(Span::styled(
-            format!("  {:<3}{:<6}{:>11}{:>11}", "id", "isr", "low", "high"),
-            Style::default()
-                .fg(theme::TEXT_MUTED)
-                .add_modifier(Modifier::BOLD),
-        )),
     ];
+
+    // Width-adaptive partition table: drop the `low` column when the pane is
+    // narrow (dashboard at 25% width); show it when zoomed to full width.
+    let wide = area.width >= 40;
+    let header = if wide {
+        format!("  {:<3}{:<5}{:>10}{:>10}", "id", "isr", "low", "high")
+    } else {
+        format!("  {:<3}{:<5}{:>11}", "id", "isr", "high")
+    };
+    lines.push(Line::from(Span::styled(
+        header,
+        Style::default()
+            .fg(theme::TEXT_MUTED)
+            .add_modifier(Modifier::BOLD),
+    )));
     for p in &d.partitions {
-        lines.push(Line::from(format!(
-            "  {:<3}{:<6}{:>11}{:>11}",
-            p.id,
-            format!("{}/{}", p.isr, p.replicas),
-            cell(p.low),
-            cell(p.high)
-        )));
+        let isr = format!("{}/{}", p.isr, p.replicas);
+        lines.push(Line::from(if wide {
+            format!(
+                "  {:<3}{:<5}{:>10}{:>10}",
+                p.id,
+                isr,
+                cell(p.low),
+                cell(p.high)
+            )
+        } else {
+            format!("  {:<3}{:<5}{:>11}", p.id, isr, cell(p.high))
+        }));
     }
 
     // No wrap: long lines clip cleanly instead of wrapping in the narrow pane.
@@ -807,7 +821,7 @@ fn render_graph(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
 
 /// Bottom-left flip pane: Detail (front) ⟷ Config (back), with the
 /// horizontal-squish card-flip animation driven by `app.flip` (FlipState).
-/// Renders the narrowing manually (like vortix) so the face closures can read
+/// Renders the narrowing manually so the face closures can read
 /// `app` immutably while the state ticks in `App::tick`.
 fn render_flip_pane(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     let render_face = |frame: &mut Frame, r: Rect| {
@@ -853,7 +867,7 @@ fn narrowed_rect(area: Rect, ratio: f32) -> Rect {
     Rect::new(x, area.y, w, area.height)
 }
 
-/// Activity/debug log panel - global by nature (vortix-style). Tails newest at
+/// Activity/debug log panel - global by nature. Tails newest at
 /// the bottom; ↑↓ scrolls back when focused.
 fn render_logs(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
     let inner_h = area.height.saturating_sub(2) as usize;
