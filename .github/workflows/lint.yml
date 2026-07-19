@@ -19,12 +19,13 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    runs-on: ubuntu-latest
+    # macOS: clippy compiles the crate (librdkafka + libsasl2), which needs the
+    # macOS toolchain — same reason as the test job.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y cmake
       - run: cargo clippy --all-targets --locked -- -D warnings

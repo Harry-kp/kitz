@@ -10,20 +10,13 @@ env:
 
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    # macOS-only: kitz ships macOS-only and links librdkafka + system libsasl2,
+    # which don't build on the Linux runners without a cross SASL toolchain.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # librdkafka is built from source via cmake (rdkafka `cmake-build`).
-      # cmake is preinstalled on GitHub runners; ensure it's present anyway.
-      - name: Ensure cmake (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y cmake
       - name: Build
         run: cargo build --locked --verbose
       - name: Test
