@@ -102,10 +102,7 @@ pub struct MskContext {
 impl ClientContext for MskContext {
     const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
 
-    fn generate_oauth_token(
-        &self,
-        _config: Option<&str>,
-    ) -> Result<OAuthToken, Box<dyn Error>> {
+    fn generate_oauth_token(&self, _config: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
         // Callback runs on a librdkafka thread; spin a tiny runtime to await
         // the async signer.
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -236,7 +233,11 @@ impl KafkaClient {
                 // that actually have them.
                 let has_members = matches!(
                     g.state(),
-                    "Stable" | "PreparingRebalance" | "CompletingRebalance" | "Assigning" | "Reconciling"
+                    "Stable"
+                        | "PreparingRebalance"
+                        | "CompletingRebalance"
+                        | "Assigning"
+                        | "Reconciling"
                 );
                 let (members, topics) = if has_members {
                     let ms = g.members();
@@ -250,10 +251,14 @@ impl KafkaClient {
                         // Subscription (what they asked for) + assignment (what
                         // they actually hold) — union covers more real cases.
                         if let Some(meta) = m.metadata() {
-                            parse_topic_strings(meta, false).into_iter().for_each(&mut add);
+                            parse_topic_strings(meta, false)
+                                .into_iter()
+                                .for_each(&mut add);
                         }
                         if let Some(asg) = m.assignment() {
-                            parse_topic_strings(asg, true).into_iter().for_each(&mut add);
+                            parse_topic_strings(asg, true)
+                                .into_iter()
+                                .for_each(&mut add);
                         }
                     }
                     topics.sort();
@@ -514,11 +519,11 @@ fn base_config(profile: &EnvProfile, debug: bool) -> ClientConfig {
 /// First existing CA bundle on this machine, if any.
 fn ca_bundle() -> Option<String> {
     const CANDIDATES: &[&str] = &[
-        "/etc/ssl/cert.pem",                         // macOS system bundle
-        "/opt/homebrew/etc/openssl@3/cert.pem",      // brew openssl (arm)
-        "/usr/local/etc/openssl@3/cert.pem",         // brew openssl (intel)
-        "/etc/ssl/certs/ca-certificates.crt",        // debian/ubuntu
-        "/etc/pki/tls/certs/ca-bundle.crt",          // rhel/fedora
+        "/etc/ssl/cert.pem",                    // macOS system bundle
+        "/opt/homebrew/etc/openssl@3/cert.pem", // brew openssl (arm)
+        "/usr/local/etc/openssl@3/cert.pem",    // brew openssl (intel)
+        "/etc/ssl/certs/ca-certificates.crt",   // debian/ubuntu
+        "/etc/pki/tls/certs/ca-bundle.crt",     // rhel/fedora
     ];
     CANDIDATES
         .iter()
@@ -624,8 +629,7 @@ fn tcp_check(hostport: &str) -> std::result::Result<u128, String> {
         .next()
         .ok_or_else(|| "DNS returned no addresses".to_string())?;
     let start = std::time::Instant::now();
-    TcpStream::connect_timeout(&addr, Duration::from_secs(4))
-        .map_err(|e| format!("{e}"))?;
+    TcpStream::connect_timeout(&addr, Duration::from_secs(4)).map_err(|e| format!("{e}"))?;
     Ok(start.elapsed().as_millis())
 }
 

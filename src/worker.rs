@@ -19,22 +19,40 @@ pub enum Cmd {
     TopicConfig(String),
     Groups,
     Peek(String),
-    Create { name: String, partitions: i32, replication: i32 },
+    Create {
+        name: String,
+        partitions: i32,
+        replication: i32,
+    },
     Delete(String),
-    AddPartitions { name: String, total: usize },
+    AddPartitions {
+        name: String,
+        total: usize,
+    },
     DeleteGroup(String),
     Shutdown,
 }
 
 /// Results from the worker back to the UI.
 pub enum Evt {
-    Connected { profile: EnvProfile, meta: Vec<TopicMeta> },
+    Connected {
+        profile: EnvProfile,
+        meta: Vec<TopicMeta>,
+    },
     ConnectFailed(String),
     Topics(Vec<TopicMeta>),
-    Watermarks { topic: String, marks: Vec<(i32, i64, i64)> },
-    TopicConfig { topic: String, entries: Vec<(String, String)> },
+    Watermarks {
+        topic: String,
+        marks: Vec<(i32, i64, i64)>,
+    },
+    TopicConfig {
+        topic: String,
+        entries: Vec<(String, String)>,
+    },
     Groups(Vec<GroupSummary>),
-    Peek { records: Vec<EventRecord> },
+    Peek {
+        records: Vec<EventRecord>,
+    },
     /// A mutation (create/delete/+partitions) or refresh succeeded.
     Ok(String),
     /// Any operation failed — carries a human-readable message.
@@ -54,7 +72,10 @@ impl Worker {
 
         std::thread::spawn(move || run(&cmd_rx, &evt_tx));
 
-        Worker { tx: cmd_tx, rx: evt_rx }
+        Worker {
+            tx: cmd_tx,
+            rx: evt_rx,
+        }
     }
 
     pub fn send(&self, cmd: Cmd) {
@@ -104,19 +125,17 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                 Ok(Evt::Peek { records })
             }),
 
-            Cmd::Create { name, partitions, replication } => mutate(
-                &mut client,
-                evt,
-                format!("created {name}"),
-                |c| c.create_topic(&name, partitions, replication),
-            ),
+            Cmd::Create {
+                name,
+                partitions,
+                replication,
+            } => mutate(&mut client, evt, format!("created {name}"), |c| {
+                c.create_topic(&name, partitions, replication)
+            }),
 
-            Cmd::Delete(name) => mutate(
-                &mut client,
-                evt,
-                format!("deleted {name}"),
-                |c| c.delete_topic(&name),
-            ),
+            Cmd::Delete(name) => mutate(&mut client, evt, format!("deleted {name}"), |c| {
+                c.delete_topic(&name)
+            }),
 
             Cmd::AddPartitions { name, total } => mutate(
                 &mut client,
