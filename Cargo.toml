@@ -30,7 +30,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 # TUI (palette borrowed from vortix)
 ratatui = "0.29"
-crossterm = "0.28"
+crossterm = "0.29"
 ratatui-flip-panel = "0.1"   # animated card-flip for the Detail⟷Config pane
 
 # Config + errors
