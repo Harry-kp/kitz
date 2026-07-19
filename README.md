@@ -1,15 +1,10 @@
+> ⚠️ **Work in progress · macOS only for now.**
 # franz
-
-> your Kafka desk clerk
 
 A terminal UI for **AWS MSK** with first-class **IAM auth**, multi-environment
 switching, and live topic / consumer-group inspection. The wedge no other Kafka
 TUI has: franz authenticates to MSK with your `~/.aws` creds (SASL OAUTHBEARER /
 SigV4) — no broker-string, cert, or JAAS juggling.
-
-> ⚠️ **Work in progress · macOS only for now.** Linux/Windows builds are
-> planned. The prebuilt macOS binary is fully self-contained (librdkafka and
-> OpenSSL are baked in) — nothing to install alongside it.
 
 [![test](https://github.com/Harry-kp/franz/actions/workflows/test.yml/badge.svg)](https://github.com/Harry-kp/franz/actions/workflows/test.yml)
 [![crates.io](https://img.shields.io/crates/v/franz.svg)](https://crates.io/crates/franz)
