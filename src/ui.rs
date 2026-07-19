@@ -438,20 +438,57 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     )];
 
     let active = app.current_env_index();
-    for (i, e) in app.config.envs.iter().enumerate() {
-        let is_active = active == Some(i);
-        let label = format!(" {}·{}{} ", i + 1, e.name, if e.prod { " ⚠" } else { "" });
-        let style = if is_active {
+    let env_style = |i: usize, prod: bool| {
+        if active == Some(i) {
             Style::default()
-                .bg(if e.prod { theme::ERROR } else { theme::ACCENT })
+                .bg(if prod { theme::ERROR } else { theme::ACCENT })
                 .fg(theme::PANEL_BG)
                 .add_modifier(Modifier::BOLD)
-        } else if e.prod {
+        } else if prod {
             Style::default().fg(theme::ERROR)
         } else {
             Style::default().fg(theme::TEXT_MUTED)
-        };
-        spans.push(Span::styled(label, style));
+        }
+    };
+    let label = |i: usize, e: &crate::config::EnvProfile| {
+        format!(" {}·{}{} ", i + 1, e.name, if e.prod { " ⚠" } else { "" })
+    };
+
+    // Budget the strip so it never clips the counts / live dot; overflow → +N.
+    let counts_text = if app.groups_loaded {
+        format!("{} topics · {} groups", app.topic_count(), app.groups.len())
+    } else {
+        format!("{} topics", app.topic_count())
+    };
+    let tail =
+        counts_text.chars().count() + 8 /* " ● live" + sep */ + if app.zoom { 10 } else { 0 };
+    let budget = (area.width as usize).saturating_sub(5 + tail + 6);
+
+    let mut used = 0usize;
+    let mut shown = 0usize;
+    for (i, e) in app.config.envs.iter().enumerate() {
+        let lbl = label(i, e);
+        let w = lbl.chars().count();
+        if used + w > budget {
+            break;
+        }
+        used += w;
+        shown += 1;
+        spans.push(Span::styled(lbl, env_style(i, e.prod)));
+    }
+    // Guarantee the active env is visible even if it fell past the budget.
+    if let Some(a) = active {
+        if a >= shown {
+            let e = &app.config.envs[a];
+            spans.push(Span::styled(label(a, e), env_style(a, e.prod)));
+        }
+    }
+    let dropped = app.config.envs.len().saturating_sub(shown);
+    if dropped > 0 {
+        spans.push(Span::styled(
+            format!(" +{dropped}"),
+            Style::default().fg(theme::TEXT_MUTED),
+        ));
     }
 
     if app.zoom {
@@ -461,12 +498,10 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
         ));
     }
     spans.push(sep());
-    let counts = if app.groups_loaded {
-        format!("{} topics · {} groups", app.topic_count(), app.groups.len())
-    } else {
-        format!("{} topics", app.topic_count())
-    };
-    spans.push(Span::styled(counts, Style::default().fg(theme::TEXT_MUTED)));
+    spans.push(Span::styled(
+        counts_text,
+        Style::default().fg(theme::TEXT_MUTED),
+    ));
     spans.push(Span::styled(
         "   ● live",
         Style::default()
@@ -920,6 +955,7 @@ fn render_modal(frame: &mut Frame, app: &App) {
                     row("/", "filter topics"),
                     row("w", "event counts + live graph"),
                     row("p", "peek events (y copy payload · Y copy key)"),
+                    row("y", "copy topic name to clipboard"),
                     row("c / a / d", "create / add partitions / delete"),
                     Line::from(""),
                     head("Cluster"),

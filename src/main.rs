@@ -1,4 +1,4 @@
-//! mskui - an IAM-auth-native, multi-environment terminal UI for AWS MSK.
+//! franz - an IAM-auth-native, multi-environment terminal UI for AWS MSK.
 //!
 //! Launch → pick an environment → inspect topics, partitions, consumer groups,
 //! peek events, and do topic admin (create / add partitions / delete) with a
@@ -21,10 +21,24 @@ use crate::app::App;
 use crate::config::Config;
 
 fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    // Version / help don't need a config file.
+    match args.first().map(String::as_str) {
+        Some("--version" | "-V") => {
+            println!("{} {}", brand::NAME, brand::VERSION);
+            return Ok(());
+        }
+        Some("--help" | "-h") => {
+            print_help();
+            return Ok(());
+        }
+        _ => {}
+    }
+
     let config = Config::load()?;
 
-    // `mskui doctor [env]` - plain-text connectivity diagnosis, no TUI.
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // `franz doctor [env]` - plain-text connectivity diagnosis, no TUI.
     if args.first().map(String::as_str) == Some("doctor") {
         let env = match args.get(1) {
             Some(name) => config
@@ -43,6 +57,26 @@ fn main() -> Result<()> {
     let result = run(&mut terminal, &mut app);
     ratatui::restore();
     result
+}
+
+fn print_help() {
+    println!(
+        "\
+{name} {version} — {tagline}
+
+USAGE:
+    franz                  launch the terminal UI
+    franz doctor [env]     diagnose connectivity for an environment
+    franz --version, -V    print version
+    franz --help, -h       print this help
+
+CONFIG:
+    ./franz.toml  or  ~/.config/franz/config.toml
+    (copy franz.toml.example to get started)",
+        name = brand::NAME,
+        version = brand::VERSION,
+        tagline = brand::TAGLINE,
+    );
 }
 
 fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {

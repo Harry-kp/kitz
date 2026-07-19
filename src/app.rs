@@ -743,6 +743,11 @@ impl App {
             (Screen::Main, Char('d')) => self.open_delete(),
             (Screen::Main, Char('a')) => self.open_add_partitions(),
             (Screen::Main, Char('p')) => self.peek(),
+            (Screen::Main, Char('y')) => {
+                if let Some(name) = self.selected_topic_name() {
+                    self.copy(&name, "topic name");
+                }
+            }
 
             // ── Full-screen groups view ──
             (Screen::Groups, Esc | Char('G')) => self.screen = Screen::Main,

@@ -84,6 +84,7 @@ prod = false
 | `f` | flip Detail ⟷ Config |
 | `w` | event counts + live graph |
 | `p` | peek events (`y`/`Y` copy) |
+| `y` | copy selected topic name |
 | `/` | filter topics |
 | `c` / `a` / `d` | create / add-partitions / delete topic |
 | `G` | consumer groups |
