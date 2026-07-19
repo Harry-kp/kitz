@@ -15,7 +15,9 @@ concurrency:
 
 jobs:
   release-plz:
-    runs-on: ubuntu-latest
+    # macOS: release-plz runs `cargo publish`, which compiles the crate
+    # (librdkafka + libsasl2) to verify — that only builds on macOS here.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
