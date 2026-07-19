@@ -15,68 +15,61 @@ mod worker;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
 
 use crate::app::App;
 use crate::config::Config;
 
-fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+/// franz — your Kafka desk clerk.
+///
+/// A terminal UI for AWS MSK with IAM auth, multi-environment switching, and
+/// live topic / consumer-group inspection. Run with no arguments to launch the
+/// TUI. Config is read from ./franz.toml or ~/.config/franz/config.toml.
+#[derive(Parser)]
+#[command(name = "franz", version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
 
-    // Version / help don't need a config file.
-    match args.first().map(String::as_str) {
-        Some("--version" | "-V") => {
-            println!("{} {}", brand::NAME, brand::VERSION);
-            return Ok(());
-        }
-        Some("--help" | "-h") => {
-            print_help();
-            return Ok(());
-        }
-        _ => {}
-    }
+#[derive(Subcommand)]
+enum Command {
+    /// Diagnose connectivity for an environment (TCP → IAM token → SASL_SSL
+    /// handshake), with verbose librdkafka logs. No TUI.
+    Doctor {
+        /// Environment name from your config (defaults to the first).
+        env: Option<String>,
+    },
+}
+
+fn main() -> Result<()> {
+    // clap handles --help/--version/bad-args and exits before we touch config.
+    let cli = Cli::parse();
 
     let config = Config::load()?;
 
-    // `franz doctor [env]` - plain-text connectivity diagnosis, no TUI.
-    if args.first().map(String::as_str) == Some("doctor") {
-        let env = match args.get(1) {
-            Some(name) => config
-                .envs
-                .iter()
-                .find(|e| &e.name == name)
-                .with_context(|| format!("no env named '{name}' in config"))?,
-            None => &config.envs[0],
-        };
-        kafka::doctor(env);
-        return Ok(());
+    match cli.command {
+        Some(Command::Doctor { env }) => {
+            let env = match env {
+                Some(name) => config
+                    .envs
+                    .iter()
+                    .find(|e| e.name == name)
+                    .with_context(|| format!("no env named '{name}' in config"))?,
+                None => &config.envs[0],
+            };
+            kafka::doctor(env);
+            Ok(())
+        }
+        None => {
+            let mut app = App::new(config);
+            let mut terminal = ratatui::init();
+            let result = run(&mut terminal, &mut app);
+            ratatui::restore();
+            result
+        }
     }
-
-    let mut app = App::new(config);
-    let mut terminal = ratatui::init();
-    let result = run(&mut terminal, &mut app);
-    ratatui::restore();
-    result
-}
-
-fn print_help() {
-    println!(
-        "\
-{name} {version} — {tagline}
-
-USAGE:
-    franz                  launch the terminal UI
-    franz doctor [env]     diagnose connectivity for an environment
-    franz --version, -V    print version
-    franz --help, -h       print this help
-
-CONFIG:
-    ./franz.toml  or  ~/.config/franz/config.toml
-    (copy franz.toml.example to get started)",
-        name = brand::NAME,
-        version = brand::VERSION,
-        tagline = brand::TAGLINE,
-    );
 }
 
 fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {
