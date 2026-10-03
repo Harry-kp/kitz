@@ -140,8 +140,11 @@ impl KafkaClient {
         let consumer: BaseConsumer<MskContext> = base_config(profile, debug)
             .create_with_context(ctx.clone())
             .context("creating consumer")?;
-        // Poll once so the OAuth callback fires and the connection warms up.
-        consumer.poll(Duration::from_secs(5));
+        // IAM only: poll once so the OAuth token callback fires before the
+        // first request. Without IAM this is a flat 5s wait for nothing.
+        if profile.auth == Auth::Iam {
+            consumer.poll(Duration::from_secs(5));
+        }
 
         let admin: AdminClient<MskContext> = base_config(profile, debug)
             .create_with_context(ctx.clone())
@@ -340,7 +343,9 @@ impl KafkaClient {
             .set("enable.auto.commit", "false")
             .create_with_context(self.ctx.clone())
             .context("creating peek consumer")?;
-        peeker.poll(Duration::from_secs(5));
+        if self.profile.auth == Auth::Iam {
+            peeker.poll(Duration::from_secs(5)); // let the OAuth callback fire
+        }
 
         let md = self.consumer.fetch_metadata(Some(topic), TIMEOUT)?;
         let topic_md = md.topics().first().context("topic not found")?;
@@ -528,7 +533,27 @@ pub fn open_log_file() -> Option<File> {
 fn check_results<T>(results: Vec<Result<T, (T, rdkafka::types::RDKafkaErrorCode)>>) -> Result<()> {
     for r in results {
         if let Err((_, code)) = r {
-            return Err(anyhow::anyhow!("kafka admin error: {code:?}"));
+            use rdkafka::types::RDKafkaErrorCode as E;
+            let hint = match code {
+                E::NonEmptyGroup => "group still has active members - stop its consumers first",
+                E::InvalidReplicationFactor => {
+                    "replication factor is larger than the number of brokers"
+                }
+                E::InvalidPartitions => "partition count can only increase",
+                E::TopicAlreadyExists => "a topic with that name already exists",
+                E::InvalidTopic => "invalid topic name (letters, digits, . _ - only)",
+                E::TopicAuthorizationFailed
+                | E::GroupAuthorizationFailed
+                | E::ClusterAuthorizationFailed => {
+                    "not authorized - check the IAM policy for this principal"
+                }
+                _ => "",
+            };
+            return Err(if hint.is_empty() {
+                anyhow::anyhow!("kafka admin error: {code:?}")
+            } else {
+                anyhow::anyhow!("{hint} ({code:?})")
+            });
         }
     }
     Ok(())

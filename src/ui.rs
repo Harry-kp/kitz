@@ -299,7 +299,16 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
         frame,
         Rect::new(fa.x, fa.bottom() - 1, fa.width, 1),
         None,
-        &[("↑↓", "select"), ("↵ / 1-9", "connect"), ("q", "quit")],
+        if app.connected.is_some() {
+            &[
+                ("↑↓", "select"),
+                ("↵ / 1-9", "connect"),
+                ("esc", "back"),
+                ("q", "quit"),
+            ]
+        } else {
+            &[("↑↓", "select"), ("↵ / 1-9", "connect"), ("q", "quit")]
+        },
         "",
     );
 }
@@ -1121,6 +1130,19 @@ fn render_modal(frame: &mut Frame, app: &App) {
                 ]),
                 Line::from(""),
             ];
+            // Kafka refuses to delete a group with live members; say so up front.
+            let members = app
+                .groups
+                .iter()
+                .find(|g| matches!(f.kind, crate::app::DeleteKind::Group) && g.name == f.target)
+                .map_or(0, |g| g.members);
+            if members > 0 {
+                lines.push(Line::from(Span::styled(
+                    format!("  ⚠ {members} active member(s) - Kafka will refuse until they stop"),
+                    Style::default().fg(theme::WARNING),
+                )));
+                lines.push(Line::from(""));
+            }
             if f.is_prod {
                 lines.push(Line::from(Span::styled(
                     format!("  ⚠ PROD - type the {noun} name to confirm:"),

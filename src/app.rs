@@ -242,7 +242,13 @@ impl App {
         self.flip.tick();
 
         if let Some(t) = &self.toast {
-            if t.born.elapsed().as_millis() > 3600 {
+            // Errors stay up long enough to actually read.
+            let ttl = if matches!(t.level, ToastLevel::Error) {
+                8000
+            } else {
+                3600
+            };
+            if t.born.elapsed().as_millis() > ttl {
                 self.toast = None;
             }
         }
@@ -399,6 +405,7 @@ impl App {
             }
             Evt::Peek { records } => {
                 self.peeking = false;
+                self.status = format!("peeked {} events", records.len());
                 self.log(format!("peeked {} events", records.len()));
                 self.modal = Modal::Peek { records, sel: 0 };
             }
@@ -411,6 +418,8 @@ impl App {
                 self.loading_groups = false;
                 self.peeking = false;
                 // Non-blocking: operation failures pop a toast, not a modal.
+                // Clear the "…ing" status so it doesn't read as still running.
+                self.status = "last action failed - see Logs".into();
                 self.toast(ToastLevel::Error, e);
             }
         }
@@ -510,8 +519,12 @@ impl App {
             return;
         };
         if self.connecting.is_none() && self.current_env_index() == Some(idx) {
-            let name = env.name.clone();
-            self.toast(ToastLevel::Warning, format!("already on {name}"));
+            if self.screen == Screen::EnvSelect {
+                self.screen = Screen::Main; // picked the env we're on: just go back
+            } else {
+                let name = env.name.clone();
+                self.toast(ToastLevel::Warning, format!("already on {name}"));
+            }
             return;
         }
         self.env_state.select(Some(idx));
@@ -721,7 +734,11 @@ impl App {
                 let n = Self::next_index(self.env_state.selected(), self.config.envs.len(), 1);
                 self.env_state.select(n);
             }
-            (Screen::EnvSelect, Enter) => self.start_connect(),
+            (Screen::EnvSelect, Enter) => match self.env_state.selected() {
+                Some(i) if self.connected.is_some() => self.switch_env(i),
+                _ => self.start_connect(),
+            },
+            (Screen::EnvSelect, Esc) if self.connected.is_some() => self.screen = Screen::Main,
             (Screen::EnvSelect | Screen::Main, Char(c)) if c.is_ascii_digit() && c != '0' => {
                 self.switch_env((c as u8 - b'1') as usize);
             }
