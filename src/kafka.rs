@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -87,9 +86,6 @@ pub struct EventRecord {
 #[derive(Clone)]
 pub struct MskContext {
     region: String,
-    /// Where librdkafka log lines go. `Some(file)` in the TUI (so logs can't
-    /// corrupt the screen); `None` in `doctor` mode (straight to stderr).
-    log_file: Option<Arc<Mutex<File>>>,
 }
 
 impl ClientContext for MskContext {
@@ -108,18 +104,6 @@ impl ClientContext for MskContext {
             principal_name: String::new(),
             lifetime_ms: expiry_ms,
         })
-    }
-
-    fn log(&self, level: RDKafkaLogLevel, fact: &str, log_message: &str) {
-        let line = format!("[rdkafka {level:?}] {fact}: {log_message}");
-        match &self.log_file {
-            Some(f) => {
-                if let Ok(mut g) = f.lock() {
-                    let _ = writeln!(g, "{line}");
-                }
-            }
-            None => eprintln!("{line}"),
-        }
     }
 }
 
@@ -149,7 +133,6 @@ impl KafkaClient {
         let debug = std::env::var("KITZ_DEBUG").is_ok();
         let ctx = MskContext {
             region: profile.region.clone(),
-            log_file: open_log_file(),
         };
 
         let consumer: BaseConsumer<MskContext> = base_config(profile, debug)
@@ -529,14 +512,13 @@ fn log_path() -> Option<PathBuf> {
     Some(dir.join("kitz.log"))
 }
 
-fn open_log_file() -> Option<Arc<Mutex<File>>> {
-    let path = log_path()?;
+/// `~/Library/Caches/kitz/kitz.log` (or the OS cache dir), opened for append.
+pub fn open_log_file() -> Option<File> {
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(path)
+        .open(log_path()?)
         .ok()
-        .map(|f| Arc::new(Mutex::new(f)))
 }
 
 fn check_results<T>(results: Vec<Result<T, (T, rdkafka::types::RDKafkaErrorCode)>>) -> Result<()> {
@@ -591,7 +573,6 @@ pub fn doctor(profile: &EnvProfile) {
     println!("\n[3/3] Full SASL_SSL handshake + metadata (verbose librdkafka log below)");
     let ctx = MskContext {
         region: profile.region.clone(),
-        log_file: None, // → stderr, so you see the handshake live
     };
     let consumer: BaseConsumer<MskContext> = match base_config(profile, true)
         .set_log_level(RDKafkaLogLevel::Debug)

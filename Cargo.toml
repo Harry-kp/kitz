@@ -43,6 +43,7 @@ toml = "0.8"
 anyhow = "1"
 dirs = "5"
 arboard = "3"      # copy payloads/keys to the system clipboard
+libc = "0.2"       # dup2: keep librdkafka stderr logs off the TUI
 
 # The profile cargo-dist builds release binaries with.
 [profile.dist]
