@@ -2,7 +2,7 @@
 
 ## Commands
 - Build: `cargo build --locked`
-- Run TUI: `cargo run --locked` (needs `./kitz.toml` — copy `kitz.toml.example`)
+- Run TUI: `cargo run --locked` (needs `./kitz.toml` — copy `kitz.toml.example` — or `-- --config <path>`)
 - Connectivity check, no TUI: `cargo run --locked -- doctor [env]`
 - Test (all): `cargo test --locked`
 - Test (one module/test): `cargo test --locked config::` or `cargo test --locked <name>`
@@ -26,6 +26,7 @@ Single binary crate, flat `src/`:
 ## Gotchas
 - First build is slow (~2 min): librdkafka + OpenSSL are vendored via cmake. Use long timeouts; needs `cmake` installed.
 - CI tests/lints on macOS only (SASL links against system libsasl2).
+- librdkafka logs go to stderr; the TUI redirects fd 2 to `~/Library/Caches/kitz/kitz.log` (see `main.rs`). Never `eprintln!` for user-facing TUI messages.
 - Without a config file the binary exits immediately ("no config found"); `--help`/`--version` work without one.
 - `kitz.toml` is gitignored — it holds real broker addresses. Never commit it.
 - UI tests are render smoke tests on a `TestBackend`; there is no live-Kafka test.

@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnvProfile {
@@ -80,10 +80,16 @@ pub struct Config {
 }
 
 impl Config {
-    /// Loads config, preferring `./kitz.toml` then `~/.config/kitz/config.toml`.
-    pub fn load() -> Result<Self> {
-        let path = Self::locate()
-            .context("no config found - create ./kitz.toml or ~/.config/kitz/config.toml")?;
+    /// Loads `explicit` if given, else `./kitz.toml`, else
+    /// `$XDG_CONFIG_HOME/kitz/config.toml` (default `~/.config/...`).
+    pub fn load(explicit: Option<&Path>) -> Result<Self> {
+        let path = match explicit {
+            Some(p) => p.to_path_buf(),
+            None => Self::locate().context(
+                "no config found - create ./kitz.toml or ~/.config/kitz/config.toml \
+                 (template: kitz.toml.example), or pass --config <path>",
+            )?,
+        };
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
         let cfg: Config =
@@ -97,7 +103,12 @@ impl Config {
         if local.exists() {
             return Some(local);
         }
-        let global = dirs::config_dir()?.join("kitz").join("config.toml");
+        // Not dirs::config_dir(): on macOS that's ~/Library/Application Support,
+        // which isn't where the docs (or users) put it.
+        let base = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".config")))?;
+        let global = base.join("kitz").join("config.toml");
         global.exists().then_some(global)
     }
 }

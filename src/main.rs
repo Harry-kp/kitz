@@ -28,6 +28,10 @@ use crate::config::Config;
 #[derive(Parser)]
 #[command(name = "kitz", version, about, long_about = None)]
 struct Cli {
+    /// Config file to use instead of ./kitz.toml / ~/.config/kitz/config.toml.
+    #[arg(long, short, global = true, value_name = "PATH")]
+    config: Option<std::path::PathBuf>,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -46,7 +50,7 @@ fn main() -> Result<()> {
     // clap handles --help/--version/bad-args and exits before we touch config.
     let cli = Cli::parse();
 
-    let config = Config::load()?;
+    let config = Config::load(cli.config.as_deref())?;
 
     match cli.command {
         Some(Command::Doctor { env }) => {

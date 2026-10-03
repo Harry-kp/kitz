@@ -64,7 +64,7 @@ export AWS_PROFILE=your-profile    # or set aws_profile per-env in the toml
 kitz
 ```
 
-`kitz.toml` (also read from `~/.config/kitz/config.toml`):
+`kitz.toml` (also read from `~/.config/kitz/config.toml`, or pass `--config <path>`):
 
 ```toml
 [[env]]
