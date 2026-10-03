@@ -1,0 +1,8 @@
+[env]
+# librdkafka (built from source) includes <curl/curl.h> even with curl off -
+# see .cargo/no-curl/curl/curl.h. An empty stub keeps Linux/musl builds free of a
+# libcurl dependency; macOS would find the SDK header anyway.
+CPATH = { value = ".cargo/no-curl", relative = true }
+# librdkafka's CMake project also declares C++ (it compiles only C); musl-tools
+# ships no musl g++, so point the detection at the host compiler.
+CXX_x86_64_unknown_linux_musl = "g++"

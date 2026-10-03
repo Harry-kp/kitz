@@ -10,13 +10,17 @@ installers = ["shell", "homebrew", "npm"]
 tap = "Harry-kp/homebrew-tap"
 npm-scope = "@harry-kp"
 publish-jobs = ["homebrew", "npm"]
-# macOS only for now (WIP). Prebuilt binaries are self-contained - librdkafka
-# is statically linked (cmake-build) and OpenSSL is vendored (ssl-vendored), so
-# end users installing via npm/brew/curl need no build or runtime deps.
-# Linux/musl come later (librdkafka+OpenSSL cross-compile needs a C toolchain).
+# Prebuilt binaries are self-contained - librdkafka is statically linked
+# (cmake-build) and OpenSSL is vendored (ssl-vendored), so npm/brew/curl users
+# need no build or runtime deps. Linux ships as a static musl binary so it runs
+# on any distro (Amazon Linux 2's glibc 2.26 included) - see .cargo/config.toml
+# for the two librdkafka build workarounds it needs.
+# ponytail: no aarch64-linux yet (Graviton bastions) - needs an aarch64 musl
+# cross toolchain on the runner; add when someone asks.
 targets = [
   "aarch64-apple-darwin",
   "x86_64-apple-darwin",
+  "x86_64-unknown-linux-musl",
 ]
 checksum = "sha256"
 install-path = "CARGO_HOME"
@@ -26,3 +30,4 @@ install-updater = false
 cmake = "*"
 [dist.dependencies.apt]
 cmake = "*"
+musl-tools = "*"
