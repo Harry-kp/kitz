@@ -1550,4 +1550,17 @@ mod tests {
         }
         out
     }
+
+    #[test]
+    fn ctrl_c_quits_even_while_filtering() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = demo_app();
+        app.screen = Screen::Main;
+        app.on_key(KeyEvent::from(KeyCode::Char('/'))).unwrap();
+        assert!(app.filtering);
+        app.on_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(app.should_quit);
+        assert_eq!(app.filter, "");
+    }
 }

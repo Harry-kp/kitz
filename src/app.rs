@@ -645,6 +645,17 @@ impl App {
     pub fn on_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
         use crossterm::event::KeyCode::*;
 
+        // Ctrl-C always quits: raw mode swallows SIGINT, and in the filter it
+        // would otherwise type a 'c'.
+        if key.code == Char('c')
+            && key
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+        {
+            self.should_quit = true;
+            return Ok(());
+        }
+
         if !matches!(self.modal, Modal::None) {
             self.on_modal_key(key);
             return Ok(());
@@ -693,6 +704,9 @@ impl App {
                 self.env_state.select(n);
             }
             (Screen::EnvSelect, Enter) => self.start_connect(),
+            (Screen::EnvSelect | Screen::Main, Char(c)) if c.is_ascii_digit() && c != '0' => {
+                self.switch_env((c as u8 - b'1') as usize);
+            }
 
             (_, Char('?')) => self.modal = Modal::Help,
             (Screen::Main | Screen::Groups, Char('x')) => self.open_actions(),
@@ -723,10 +737,6 @@ impl App {
                     .select(Some(self.current_env_index().unwrap_or(0)));
                 self.screen = Screen::EnvSelect;
             }
-            (Screen::Main, Char(c)) if c.is_ascii_digit() && c != '0' => {
-                self.switch_env((c as u8 - b'1') as usize);
-            }
-
             (Screen::Main, Char('/')) => {
                 self.focus = Panel::Topics;
                 self.filtering = true;
