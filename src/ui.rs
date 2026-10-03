@@ -10,7 +10,8 @@ use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Row, Sparkline, Table, Wrap,
+    Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Row, Sparkline, Table,
+    Wrap,
 };
 use ratatui::Frame;
 
@@ -983,24 +984,27 @@ fn render_modal(frame: &mut Frame, app: &App) {
                 27,
             );
         }
-        Modal::Error(msg) => popup(
-            frame,
-            "Error",
-            vec![
-                Line::from(""),
+        Modal::Error(msg) => {
+            let mut lines = vec![Line::from("")];
+            lines.extend(msg.lines().map(|l| {
                 Line::from(Span::styled(
-                    format!("  {msg}"),
+                    l.to_string(),
                     Style::default().fg(theme::ERROR),
-                )),
-                Line::from(""),
-                Line::from(Span::styled(
-                    "  press any key to dismiss",
-                    Style::default().fg(theme::TEXT_MUTED),
-                )),
-            ],
-            theme::ERROR,
-            9,
-        ),
+                ))
+            }));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "press any key to dismiss",
+                Style::default().fg(theme::TEXT_MUTED),
+            )));
+            // Grow with the wrapped message so long errors aren't cut off
+            // (inner width = popup minus borders and padding).
+            let inner = popup_width(frame.area()).saturating_sub(4);
+            let rows = Paragraph::new(lines.clone())
+                .wrap(Wrap { trim: false })
+                .line_count(inner) as u16;
+            popup(frame, "Error", lines, theme::ERROR, rows + 2);
+        }
         Modal::Create(f) => {
             let field = |label: &str, val: &str, focused: bool| {
                 let vstyle = if focused {
@@ -1260,9 +1264,13 @@ fn pretty_json(s: &str) -> String {
         .unwrap_or_else(|_| s.to_string())
 }
 
+fn popup_width(a: Rect) -> u16 {
+    (a.width * 7 / 10).clamp(40, 96)
+}
+
 fn popup(frame: &mut Frame, title: &str, lines: Vec<Line>, accent: Color, rows: u16) {
     let a = frame.area();
-    let w = (a.width * 7 / 10).clamp(40, 96);
+    let w = popup_width(a);
     let h = rows.min(a.height.saturating_sub(2)).max(5);
     let area = centered_fixed(w, h, a);
     frame.render_widget(Clear, area);
@@ -1274,6 +1282,7 @@ fn popup(frame: &mut Frame, title: &str, lines: Vec<Line>, accent: Color, rows: 
             format!(" {title} "),
             Style::default().fg(accent).add_modifier(Modifier::BOLD),
         ))
+        .padding(Padding::horizontal(1))
         .style(Style::default().bg(theme::PANEL_BG));
     frame.render_widget(
         Paragraph::new(lines).block(b).wrap(Wrap { trim: false }),

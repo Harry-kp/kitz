@@ -94,7 +94,7 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                     client = Some(c);
                     send(evt, Evt::Connected { profile, meta });
                 }
-                Err(e) => send(evt, Evt::ConnectFailed(format!("{e:#}"))),
+                Err(e) => send(evt, Evt::ConnectFailed(connect_error(&e, &profile.name))),
             },
 
             Cmd::RefreshTopics => with_client_mut(&mut client, evt, |c| {
@@ -113,7 +113,7 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                 if let Some(c) = &client {
                     let entries = c
                         .topic_config(&topic)
-                        .unwrap_or_else(|e| vec![("(unavailable)".into(), format!("{e:#}"))]);
+                        .unwrap_or_else(|e| vec![("(unavailable)".into(), err_text(&e))]);
                     send(evt, Evt::TopicConfig { topic, entries });
                 }
             }
@@ -156,6 +156,31 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
     }
 }
 
+/// Error chain joined with ": ", skipping links already in the text (rdkafka
+/// errors repeat their source code in their own message).
+fn err_text(e: &anyhow::Error) -> String {
+    let mut out = String::new();
+    for link in e.chain().map(|c| c.to_string()) {
+        if !out.contains(&link) {
+            if !out.is_empty() {
+                out.push_str(": ");
+            }
+            out.push_str(&link);
+        }
+    }
+    out
+}
+
+/// Connect errors plus the one thing to try next when brokers are unreachable.
+fn connect_error(e: &anyhow::Error, env: &str) -> String {
+    let text = err_text(e);
+    if text.contains("BrokerTransportFailure") {
+        format!("{text}\n\nBrokers unreachable - check VPN/routing and that the bootstrap port matches `auth`. Run `kitz doctor {env}` for a step-by-step check.")
+    } else {
+        text
+    }
+}
+
 fn send(evt: &Sender<Evt>, e: Evt) {
     let _ = evt.send(e);
 }
@@ -170,7 +195,7 @@ fn with_client(
     };
     match f(c) {
         Ok(e) => send(evt, e),
-        Err(e) => send(evt, Evt::Failed(format!("{e:#}"))),
+        Err(e) => send(evt, Evt::Failed(err_text(&e))),
     }
 }
 
@@ -184,7 +209,7 @@ fn with_client_mut(
     };
     match f(c) {
         Ok(e) => send(evt, e),
-        Err(e) => send(evt, Evt::Failed(format!("{e:#}"))),
+        Err(e) => send(evt, Evt::Failed(err_text(&e))),
     }
 }
 
@@ -204,6 +229,23 @@ fn mutate(
             send(evt, Evt::Ok(ok_msg));
             send(evt, Evt::Topics(c.metadata()));
         }
-        Err(e) => send(evt, Evt::Failed(format!("{e:#}"))),
+        Err(e) => send(evt, Evt::Failed(err_text(&e))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn err_text_skips_repeated_sources_and_hints_on_transport_failure() {
+        let e = anyhow::Error::from(rdkafka::error::KafkaError::MetadataFetch(
+            rdkafka::types::RDKafkaErrorCode::BrokerTransportFailure,
+        ))
+        .context("fetching metadata");
+        let text = err_text(&e);
+        assert_eq!(text.matches("BrokerTransportFailure").count(), 1, "{text}");
+        assert!(text.starts_with("fetching metadata: "));
+        assert!(connect_error(&e, "stag").contains("kitz doctor stag"));
     }
 }
