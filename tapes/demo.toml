@@ -1,0 +1,13 @@
+# Demo config for tapes/demo.tape - a local Kafka seeded by tapes/seed-demo.sh.
+[[env]]
+name = "stag"
+bootstrap = "localhost:9092"
+region = "eu-central-1"
+auth = "plaintext"
+
+[[env]]
+name = "prod"
+bootstrap = "localhost:9092"
+region = "eu-central-1"
+auth = "plaintext"
+prod = true
