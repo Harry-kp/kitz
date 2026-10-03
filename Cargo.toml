@@ -16,11 +16,11 @@ exclude = [".github/", "kitz.toml", "*.png", "docs/"]
 
 [dependencies]
 # Kafka - vendored librdkafka via cmake, with OpenSSL statically vendored
-# (`ssl-vendored`) so the prebuilt binary is self-contained and runs on any
-# Mac without the user installing OpenSSL/librdkafka. SASL uses macOS's system
-# libsasl2 (always present). This is what makes npm/brew/curl installs
-# dependency-free for end users.
-rdkafka = { version = "0.36", features = ["cmake-build", "ssl-vendored", "sasl"] }
+# (`ssl-vendored`) so the prebuilt binary is self-contained: npm/brew/curl
+# installs need no system libs. MSK IAM (SASL OAUTHBEARER) comes with the ssl
+# build; the `sasl` feature would only add Cyrus SASL (GSSAPI), which kitz
+# doesn't use and which would make Linux binaries depend on libsasl2.
+rdkafka = { version = "0.36", features = ["cmake-build", "ssl-vendored"] }
 
 # AWS MSK IAM auth - the wedge. Generates the SigV4 SASL token.
 aws-types = "1"

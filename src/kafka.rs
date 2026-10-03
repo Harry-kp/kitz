@@ -732,3 +732,24 @@ fn gen_token(region: &str) -> std::result::Result<usize, String> {
         .map(|(t, _)| t.len())
         .map_err(|e| format!("{e}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// MSK IAM needs SASL_SSL + OAUTHBEARER compiled into librdkafka; client
+    /// creation fails ("no provider for SASL mechanism") if a build drops it.
+    #[test]
+    fn iam_client_config_is_supported_by_this_build() {
+        let profile: EnvProfile = toml::from_str(
+            "name='t'\nbootstrap='127.0.0.1:1'\nregion='eu-central-1'\nauth='iam'",
+        )
+        .unwrap();
+        let ctx = MskContext {
+            region: profile.region.clone(),
+        };
+        let c: Result<BaseConsumer<MskContext>, _> =
+            base_config(&profile, false).create_with_context(ctx);
+        assert!(c.is_ok(), "{:?}", c.err());
+    }
+}
