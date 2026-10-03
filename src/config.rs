@@ -39,6 +39,40 @@ pub enum Auth {
     Plaintext,
 }
 
+impl Auth {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Auth::Iam => "iam",
+            Auth::Tls => "tls",
+            Auth::Plaintext => "plaintext",
+        }
+    }
+}
+
+impl EnvProfile {
+    /// Warns when a broker uses a well-known MSK port for a different auth
+    /// mode (e.g. 9092 with auth = "iam"), the classic copy-paste mistake.
+    /// Non-MSK ports are not second-guessed.
+    pub fn port_mismatch(&self) -> Option<String> {
+        self.bootstrap.split(',').find_map(|hp| {
+            let port = hp.trim().rsplit_once(':')?.1;
+            let implied = match port {
+                "9092" => Auth::Plaintext,
+                "9094" | "9194" => Auth::Tls,
+                "9098" | "9198" => Auth::Iam,
+                _ => return None,
+            };
+            (implied != self.auth).then(|| {
+                format!(
+                    "port {port} is MSK's {} port, but auth = \"{}\"",
+                    implied.as_str(),
+                    self.auth.as_str()
+                )
+            })
+        })
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     #[serde(rename = "env")]
@@ -85,5 +119,21 @@ mod tests {
         assert_eq!(auth_of("auth='ssl'").unwrap(), Auth::Tls);
         assert_eq!(auth_of("auth='plaintext'").unwrap(), Auth::Plaintext);
         assert!(auth_of("auth='IAM'").is_err());
+    }
+
+    #[test]
+    fn port_mismatch_flags_known_msk_ports_only() {
+        let env = |bootstrap: &str, auth| EnvProfile {
+            name: "x".into(),
+            bootstrap: bootstrap.into(),
+            region: "r".into(),
+            auth,
+            aws_profile: None,
+            prod: false,
+        };
+        assert!(env("b:9092,c:9092", Auth::Iam).port_mismatch().is_some());
+        assert!(env("b:9098", Auth::Iam).port_mismatch().is_none());
+        assert!(env("b:9094", Auth::Tls).port_mismatch().is_none());
+        assert!(env("localhost:19092", Auth::Iam).port_mismatch().is_none());
     }
 }

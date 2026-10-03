@@ -534,27 +534,47 @@ fn check_results<T>(results: Vec<Result<T, (T, rdkafka::types::RDKafkaErrorCode)
 
 /// Prints a step-by-step diagnosis to stdout/stderr (no TUI). Isolates the
 /// three failure layers: TCP reachability, IAM token generation, and the full
-/// librdkafka SASL_SSL handshake with verbose debug logs.
-pub fn doctor(profile: &EnvProfile) {
+/// librdkafka handshake with verbose debug logs. Returns false if any failed.
+pub fn doctor(profile: &EnvProfile) -> bool {
     println!("kitz doctor");
-    println!("  env       : {}", profile.name);
-    println!("  auth      : {:?}", profile.auth);
-    println!("  region    : {}", profile.region);
-    println!("  bootstrap : {}", profile.bootstrap);
-    println!("  aws_profile: {:?}", profile.aws_profile);
-    println!("  ca bundle : {:?}", ca_bundle());
+    println!("  env         : {}", profile.name);
+    println!("  auth        : {}", profile.auth.as_str());
+    println!("  region      : {}", profile.region);
+    println!("  bootstrap   : {}", profile.bootstrap);
+    println!(
+        "  aws_profile : {}",
+        profile
+            .aws_profile
+            .as_deref()
+            .unwrap_or("(default credential chain)")
+    );
+    println!(
+        "  ca bundle   : {}",
+        ca_bundle().unwrap_or_else(|| "(none found)".into())
+    );
+    if let Some(warning) = profile.port_mismatch() {
+        println!("  ⚠ {warning}");
+    }
     if let Some(p) = &profile.aws_profile {
         std::env::set_var("AWS_PROFILE", p);
     }
+    let mut ok = true;
 
     println!("\n[1/3] TCP reachability (are the brokers routable from here?)");
+    let mut reachable = false;
     for hostport in profile.bootstrap.split(',') {
         let hp = hostport.trim();
         print!("      {hp} … ");
         let _ = std::io::stdout().flush();
         match tcp_check(hp) {
-            Ok(ms) => println!("OK ({ms} ms)"),
-            Err(e) => println!("FAIL: {e}"),
+            Ok(ms) => {
+                reachable = true;
+                println!("OK ({ms} ms)");
+            }
+            Err(e) => {
+                ok = false;
+                println!("FAIL: {e}");
+            }
         }
     }
 
@@ -564,13 +584,20 @@ pub fn doctor(profile: &EnvProfile) {
         let _ = std::io::stdout().flush();
         match gen_token(&profile.region) {
             Ok(len) => println!("OK ({len} byte token)"),
-            Err(e) => println!("FAIL: {e}"),
+            Err(e) => {
+                ok = false;
+                println!("FAIL: {e}");
+            }
         }
     } else {
-        println!("      skipped (auth = {:?}, not IAM)", profile.auth);
+        println!("      skipped (auth = {}, not IAM)", profile.auth.as_str());
     }
 
-    println!("\n[3/3] Full SASL_SSL handshake + metadata (verbose librdkafka log below)");
+    println!("\n[3/3] Kafka handshake + metadata (verbose librdkafka log below)");
+    if !reachable {
+        println!("      skipped (no broker reachable - fix step 1 first)");
+        return false;
+    }
     let ctx = MskContext {
         region: profile.region.clone(),
     };
@@ -581,14 +608,18 @@ pub fn doctor(profile: &EnvProfile) {
         Ok(c) => c,
         Err(e) => {
             println!("      client create FAIL: {e}");
-            return;
+            return false;
         }
     };
     consumer.poll(Duration::from_secs(3));
     match consumer.fetch_metadata(None, Duration::from_secs(15)) {
         Ok(md) => println!("\n  ✓ metadata OK - {} topics", md.topics().len()),
-        Err(e) => println!("\n  ✗ metadata FAIL: {e}"),
+        Err(e) => {
+            ok = false;
+            println!("\n  ✗ metadata FAIL: {e}");
+        }
     }
+    ok
 }
 
 fn tcp_check(hostport: &str) -> std::result::Result<u128, String> {

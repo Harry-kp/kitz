@@ -55,10 +55,16 @@ fn main() -> Result<()> {
                     .envs
                     .iter()
                     .find(|e| e.name == name)
-                    .with_context(|| format!("no env named '{name}' in config"))?,
+                    .with_context(|| {
+                        let names: Vec<_> = config.envs.iter().map(|e| e.name.as_str()).collect();
+                        format!(
+                            "no env named '{name}' in config (have: {})",
+                            names.join(", ")
+                        )
+                    })?,
                 None => &config.envs[0],
             };
-            kafka::doctor(env);
+            anyhow::ensure!(kafka::doctor(env), "doctor found problems (see above)");
             Ok(())
         }
         None => {

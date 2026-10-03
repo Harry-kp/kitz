@@ -94,7 +94,7 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                     client = Some(c);
                     send(evt, Evt::Connected { profile, meta });
                 }
-                Err(e) => send(evt, Evt::ConnectFailed(connect_error(&e, &profile.name))),
+                Err(e) => send(evt, Evt::ConnectFailed(connect_error(&e, &profile))),
             },
 
             Cmd::RefreshTopics => with_client_mut(&mut client, evt, |c| {
@@ -172,13 +172,18 @@ fn err_text(e: &anyhow::Error) -> String {
 }
 
 /// Connect errors plus the one thing to try next when brokers are unreachable.
-fn connect_error(e: &anyhow::Error, env: &str) -> String {
-    let text = err_text(e);
-    if text.contains("BrokerTransportFailure") {
-        format!("{text}\n\nBrokers unreachable - check VPN/routing and that the bootstrap port matches `auth`. Run `kitz doctor {env}` for a step-by-step check.")
-    } else {
-        text
+fn connect_error(e: &anyhow::Error, env: &EnvProfile) -> String {
+    let mut text = err_text(e);
+    if let Some(warning) = env.port_mismatch() {
+        text.push_str(&format!("\n\n⚠ {warning}"));
     }
+    if text.contains("BrokerTransportFailure") {
+        text.push_str(&format!(
+            "\n\nBrokers unreachable - check VPN/routing. Run `kitz doctor {}` for a step-by-step check.",
+            env.name
+        ));
+    }
+    text
 }
 
 fn send(evt: &Sender<Evt>, e: Evt) {
@@ -246,6 +251,10 @@ mod tests {
         let text = err_text(&e);
         assert_eq!(text.matches("BrokerTransportFailure").count(), 1, "{text}");
         assert!(text.starts_with("fetching metadata: "));
-        assert!(connect_error(&e, "stag").contains("kitz doctor stag"));
+        let env: EnvProfile =
+            toml::from_str("name='stag'\nbootstrap='b:9092'\nregion='r'\nauth='iam'").unwrap();
+        let msg = connect_error(&e, &env);
+        assert!(msg.contains("kitz doctor stag"), "{msg}");
+        assert!(msg.contains("port 9092"), "{msg}");
     }
 }
