@@ -5,7 +5,6 @@
 //! prod guardrail. Auth is MSK IAM (SASL OAUTHBEARER) using your ~/.aws creds.
 
 mod app;
-mod brand;
 mod config;
 mod kafka;
 mod theme;

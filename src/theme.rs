@@ -1,8 +1,15 @@
-//! Color palette (Synthwave): slate panels, cyan accents,
-//! coral/emerald status. Kept as a flat set of consts - the app is small enough
-//! not to need runtime theme switching yet.
+//! Identity (name, tagline, wordmark) and color palette (Synthwave): slate
+//! panels, cyan accents, coral/emerald status. Kept as a flat set of consts -
+//! the app is small enough not to need runtime theme switching yet.
 
 use ratatui::style::Color;
+
+pub const NAME: &str = "kitz";
+pub const TAGLINE: &str = "your Kafka desk clerk";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// ASCII wordmark for the landing screen.
+pub const WORDMARK: &[&str] = &["  █▄▀ █ ▀█▀ ▀█", "  █ █ █  █  █▄"];
 
 // Backgrounds. Dashboard panels are transparent outlines on APP_BG (outline
 // look); PANEL_BG is only for opaque overlays (modals, toast, connecting).

@@ -190,7 +190,7 @@ fn footer(frame: &mut Frame, area: Rect, lead: Option<&str>, hints: &[(&str, &st
     );
 
     // Brand + version, bottom-right, muted (moved here from the header).
-    let brand = format!("{} v{} ", crate::brand::NAME, crate::brand::VERSION);
+    let brand = format!("{} v{} ", theme::NAME, theme::VERSION);
     let bw = brand.chars().count() as u16;
     if area.width > bw + 6 {
         let br = Rect::new(area.right().saturating_sub(bw), area.y, bw, 1);
@@ -207,7 +207,7 @@ fn footer(frame: &mut Frame, area: Rect, lead: Option<&str>, hints: &[(&str, &st
 
 fn render_env_select(frame: &mut Frame, app: &mut App) {
     let n = app.config.envs.len() as u16;
-    let block_h = (crate::brand::WORDMARK.len() as u16 + 4) + (n + 2);
+    let block_h = (theme::WORDMARK.len() as u16 + 4) + (n + 2);
     let area = centered_fixed(
         58,
         block_h.min(frame.area().height.saturating_sub(2)),
@@ -215,15 +215,15 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
     );
 
     let rows = Layout::vertical([
-        Constraint::Length(crate::brand::WORDMARK.len() as u16 + 3), // wordmark + tagline
-        Constraint::Min(1),                                          // env list
+        Constraint::Length(theme::WORDMARK.len() as u16 + 3), // wordmark + tagline
+        Constraint::Min(1),                                   // env list
     ])
     .split(area);
 
     // ── Branded masthead ──
     frame.render_widget(Clear, area);
     let mut brand_lines = vec![Line::from("")];
-    for w in crate::brand::WORDMARK {
+    for w in theme::WORDMARK {
         brand_lines.push(Line::from(Span::styled(
             *w,
             Style::default()
@@ -232,7 +232,7 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
         )));
     }
     brand_lines.push(Line::from(Span::styled(
-        format!("  {}", crate::brand::TAGLINE),
+        format!("  {}", theme::TAGLINE),
         Style::default().fg(theme::TEXT_MUTED),
     )));
     frame.render_widget(
@@ -293,7 +293,7 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
         Rect::new(fa.x, fa.bottom() - 1, fa.width, 1),
         None,
         &[("↑↓", "select"), ("↵", "connect"), ("q", "quit")],
-        &format!("v{}", crate::brand::VERSION),
+        &format!("v{}", theme::VERSION),
     );
 }
 
