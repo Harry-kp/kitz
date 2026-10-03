@@ -3,6 +3,13 @@
 All notable changes to kitz are documented here. Managed by
 [release-plz](https://release-plz.dev) from conventional commits.
 
+## [0.2.1] - 2026-10-03
+
+### Documentation
+
+- Add the 0.2.0 section
+- Never hand-bump the version - release-plz publishes it immediately
+
 ## [0.2.0] - 2026-10-03
 
 ### Highlights
