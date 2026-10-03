@@ -553,6 +553,18 @@ fn render_topics(frame: &mut Frame, area: Rect, app: &mut App, focused: bool) {
     } else {
         format!("Topics · {}", app.topic_count())
     };
+    if visible.is_empty() && !app.filter.is_empty() {
+        frame.render_widget(
+            Paragraph::new(format!(
+                "  no topics match \"{}\"\n  esc clears the filter",
+                app.filter
+            ))
+            .style(Style::default().fg(theme::TEXT_MUTED))
+            .block(panel(&title, focused)),
+            area,
+        );
+        return;
+    }
     let (hl, sym) = highlight(focused);
     let list = List::new(items)
         .block(panel(&title, focused))
@@ -624,7 +636,8 @@ fn render_detail(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         kv(
             "topic",
             Span::styled(
-                d.name.clone(),
+                // 2 borders + 2 indent + 12 label.
+                truncate(&d.name, area.width.saturating_sub(16) as usize),
                 Style::default()
                     .fg(theme::ACCENT_LIGHT)
                     .add_modifier(Modifier::BOLD),
@@ -823,7 +836,7 @@ fn render_graph(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
             ),
             Span::styled("   peak ", Style::default().fg(theme::TEXT_MUTED)),
             Span::styled(fmt_count(peak as i64), Style::default().fg(theme::ACCENT)),
-            Span::styled("   /3.5s window", Style::default().fg(theme::SEPARATOR)),
+            Span::styled("   events/s", Style::default().fg(theme::SEPARATOR)),
         ])),
         rows[0],
     );
@@ -1172,7 +1185,11 @@ fn render_modal(frame: &mut Frame, app: &App) {
             let h = lines.len() as u16 + 2;
             popup(frame, &format!("Delete {noun}"), lines, theme::ERROR, h);
         }
-        Modal::Peek { records, sel } => render_peek(frame, records, *sel),
+        Modal::Peek {
+            records,
+            sel,
+            scroll,
+        } => render_peek(frame, records, *sel, *scroll),
         Modal::Actions { items, sel } => {
             let mut lines = vec![Line::from("")];
             for (i, (k, label)) in items.iter().enumerate() {
@@ -1209,7 +1226,7 @@ fn render_modal(frame: &mut Frame, app: &App) {
 
 /// Interactive event browser: event list (top) + full pretty-printed payload of
 /// the selected event (bottom). y copies the payload, Y the key.
-fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: usize) {
+fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: usize, scroll: u16) {
     let a = frame.area();
     let w = (a.width * 85 / 100).clamp(50, 130);
     let h = (a.height * 85 / 100).clamp(12, 44);
@@ -1222,7 +1239,7 @@ fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: us
         .border_style(Style::default().fg(theme::ACCENT))
         .title(Span::styled(
             format!(
-                " Peek · {} events   ↑↓ select · y copy payload · Y copy key · esc close ",
+                " Peek · {} events   ↑↓ select · PgDn/PgUp scroll · y copy payload · Y copy key · esc close ",
                 records.len()
             ),
             Style::default()
@@ -1285,31 +1302,50 @@ fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: us
     let r = &records[sel];
     let ts = r
         .timestamp
-        .map(|t| t.to_string())
+        .map(|t| crate::app::local_time(t, true))
         .unwrap_or_else(|| "-".into());
-    let mut detail = vec![Line::from(vec![
-        Span::styled("─ payload  ", Style::default().fg(theme::SEPARATOR)),
-        Span::styled(
-            format!(
-                "partition {} · offset {} · ts {} · key {}",
-                r.partition,
-                r.offset,
-                ts,
-                if r.key.is_empty() { "∅" } else { &r.key }
-            ),
-            Style::default().fg(theme::TEXT_MUTED),
-        ),
-    ])];
-    for line in pretty_json(&r.payload)
+    let body: Vec<Line> = pretty_json(&r.payload)
         .lines()
-        .take(parts[1].height.saturating_sub(1) as usize)
-    {
-        detail.push(Line::from(Span::styled(
-            line.to_string(),
-            Style::default().fg(theme::TEXT),
-        )));
-    }
-    frame.render_widget(Paragraph::new(detail).wrap(Wrap { trim: false }), parts[1]);
+        .map(|l| {
+            Line::from(Span::styled(
+                l.to_string(),
+                Style::default().fg(theme::TEXT),
+            ))
+        })
+        .collect();
+    let [head, rest] =
+        Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(parts[1]);
+    let body = Paragraph::new(body).wrap(Wrap { trim: false });
+    // Long payloads scroll instead of being silently cut off.
+    let total = body.line_count(rest.width) as u16;
+    let max_scroll = total.saturating_sub(rest.height);
+    let scroll = scroll.min(max_scroll);
+    let more = if max_scroll > 0 {
+        format!(
+            " · lines {}-{} of {total} (PgDn/PgUp)",
+            scroll + 1,
+            (scroll + rest.height).min(total)
+        )
+    } else {
+        String::new()
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("─ payload  ", Style::default().fg(theme::SEPARATOR)),
+            Span::styled(
+                format!(
+                    "partition {} · offset {} · ts {} · key {}{more}",
+                    r.partition,
+                    r.offset,
+                    ts,
+                    if r.key.is_empty() { "∅" } else { &r.key }
+                ),
+                Style::default().fg(theme::TEXT_MUTED),
+            ),
+        ])),
+        head,
+    );
+    frame.render_widget(body.scroll((scroll, 0)), rest);
 }
 
 /// Pretty-print a payload as JSON if it parses; otherwise return it verbatim.
@@ -1582,6 +1618,7 @@ mod tests {
         let mut app = demo_app();
         app.screen = Screen::Main;
         app.modal = Modal::Peek {
+            scroll: 0,
             records: vec![
                 EventRecord {
                     partition: 0,
@@ -1685,5 +1722,15 @@ mod tests {
         app.brokers = 2;
         press(&mut app, "c");
         assert!(matches!(app.modal, Modal::Create(ref f) if f.replication == "2"));
+    }
+
+    #[test]
+    fn pretty_json_keeps_original_key_order() {
+        let out = pretty_json(r#"{"id":1,"amount":2,"currency":"EUR"}"#);
+        let pos = |k: &str| out.find(k).unwrap();
+        assert!(
+            pos("id") < pos("amount") && pos("amount") < pos("currency"),
+            "{out}"
+        );
     }
 }

@@ -66,6 +66,8 @@ pub enum Modal {
     Peek {
         records: Vec<EventRecord>,
         sel: usize,
+        /// Lines scrolled in the payload pane (reset when `sel` changes).
+        scroll: u16,
     },
     /// Context action menu: every action for the current
     /// screen/pane. Keeps the footer to essentials.
@@ -146,7 +148,8 @@ pub struct App {
     // Live incoming-events graph (top-right). Sampling is opt-in per topic via `w`.
     pub rate: Vec<u64>,
     pub rate_topic: Option<String>,
-    rate_last_total: Option<i64>,
+    /// Last total + when it arrived, to turn deltas into events/second.
+    rate_last_total: Option<(i64, Instant)>,
     rate_last_at: Instant,
 
     pub groups: Vec<GroupSummary>,
@@ -370,14 +373,17 @@ impl App {
                 }
                 // Feed the incoming-events graph.
                 if self.rate_topic.as_deref() == Some(topic.as_str()) {
-                    if let Some(prev) = self.rate_last_total {
-                        let delta = (total - prev).max(0) as u64;
-                        self.rate.push(delta);
+                    if let Some((prev, at)) = self.rate_last_total {
+                        // Polls are ~3.5s apart plus round-trip, so divide by
+                        // the measured gap - the graph is labelled per second.
+                        let secs = at.elapsed().as_secs_f64().max(0.001);
+                        let per_sec = ((total - prev).max(0) as f64 / secs).round() as u64;
+                        self.rate.push(per_sec);
                         if self.rate.len() > 120 {
                             self.rate.remove(0);
                         }
                     }
-                    self.rate_last_total = Some(total);
+                    self.rate_last_total = Some((total, Instant::now()));
                 } else {
                     self.log(format!("loaded event counts for {topic}"));
                 }
@@ -407,7 +413,11 @@ impl App {
                 self.peeking = false;
                 self.status = format!("peeked {} events", records.len());
                 self.log(format!("peeked {} events", records.len()));
-                self.modal = Modal::Peek { records, sel: 0 };
+                self.modal = Modal::Peek {
+                    records,
+                    sel: 0,
+                    scroll: 0,
+                };
             }
             Evt::Ok(msg) => {
                 self.status = msg.clone();
@@ -772,6 +782,11 @@ impl App {
                     .select(Some(self.current_env_index().unwrap_or(0)));
                 self.screen = Screen::EnvSelect;
             }
+            (Screen::Main, Esc) if !self.filter.is_empty() => {
+                self.filter.clear();
+                self.topic_state.select(Some(0));
+                self.rebuild_detail();
+            }
             (Screen::Main, Char('/')) => {
                 self.focus = Panel::Topics;
                 self.filtering = true;
@@ -919,32 +934,41 @@ impl App {
                 _ => self.modal = Modal::Actions { items, sel },
             },
 
-            Modal::Peek { records, mut sel } => match key.code {
-                Esc | Char('q') => {} // modal already cleared → closes
-                Up | Char('k') => {
-                    sel = sel.saturating_sub(1);
-                    self.modal = Modal::Peek { records, sel };
-                }
-                Down | Char('j') => {
-                    sel = (sel + 1).min(records.len().saturating_sub(1));
-                    self.modal = Modal::Peek { records, sel };
-                }
-                Char('y') => {
-                    if let Some(r) = records.get(sel) {
-                        let payload = r.payload.clone();
-                        self.copy(&payload, "payload");
+            Modal::Peek {
+                records,
+                mut sel,
+                mut scroll,
+            } => {
+                match key.code {
+                    Esc | Char('q') => return, // modal already cleared → closes
+                    Up | Char('k') => (sel, scroll) = (sel.saturating_sub(1), 0),
+                    Down | Char('j') => {
+                        (sel, scroll) = ((sel + 1).min(records.len().saturating_sub(1)), 0)
                     }
-                    self.modal = Modal::Peek { records, sel };
-                }
-                Char('Y') => {
-                    if let Some(r) = records.get(sel) {
-                        let key = r.key.clone();
-                        self.copy(&key, "key");
+                    // ponytail: renderer clamps scroll (it knows the wrapped height);
+                    // overshooting PgDn makes PgUp lag. Store max_scroll if it bites.
+                    PageDown | Char(' ') => scroll = scroll.saturating_add(10),
+                    PageUp => scroll = scroll.saturating_sub(10),
+                    Char('y') => {
+                        if let Some(r) = records.get(sel) {
+                            let payload = r.payload.clone();
+                            self.copy(&payload, "payload");
+                        }
                     }
-                    self.modal = Modal::Peek { records, sel };
+                    Char('Y') => {
+                        if let Some(r) = records.get(sel) {
+                            let key = r.key.clone();
+                            self.copy(&key, "key");
+                        }
+                    }
+                    _ => {}
                 }
-                _ => self.modal = Modal::Peek { records, sel },
-            },
+                self.modal = Modal::Peek {
+                    records,
+                    sel,
+                    scroll,
+                };
+            }
 
             Modal::Create(mut f) => match key.code {
                 Esc => {}
@@ -1118,14 +1142,33 @@ impl App {
     }
 }
 
-/// UTC HH:MM:SS for activity-log timestamps (no chrono dependency).
+/// Local-time HH:MM:SS for activity-log timestamps.
 fn now_hms() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let s = SystemTime::now()
+    let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("{:02}:{:02}:{:02}", (s / 3600) % 24, (s / 60) % 60, s % 60)
+        .map_or(0, |d| d.as_millis() as i64);
+    local_time(ms, false)
+}
+
+/// Epoch milliseconds → local `HH:MM:SS`, or `YYYY-MM-DD HH:MM:SS` with
+/// `date` (no chrono dependency; libc is already linked).
+pub fn local_time(epoch_ms: i64, date: bool) -> String {
+    let t = epoch_ms.div_euclid(1000) as libc::time_t;
+    // SAFETY: localtime_r only writes into the zeroed `tm` we own.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_r(&t, &mut tm) };
+    let hms = format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec);
+    if date {
+        format!(
+            "{:04}-{:02}-{:02} {hms}",
+            tm.tm_year + 1900,
+            tm.tm_mon + 1,
+            tm.tm_mday
+        )
+    } else {
+        hms
+    }
 }
 
 fn copy_to_clipboard(text: &str) -> std::result::Result<(), String> {
@@ -1136,3 +1179,13 @@ fn copy_to_clipboard(text: &str) -> std::result::Result<(), String> {
 // crossterm's KeyCode::Tab collides with our `Tab_` usage in match arms after
 // the `use KeyCode::*` glob; alias it. (BackTab comes from the glob.)
 use crossterm::event::KeyCode::Tab as Tab_;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn local_time_formats_epoch_ms() {
+        let s = super::local_time(1_791_020_372_134, true);
+        assert!(s.starts_with("2026-10-0"), "{s}");
+        assert_eq!(s.len(), "2026-10-03 09:39:32".len());
+    }
+}
