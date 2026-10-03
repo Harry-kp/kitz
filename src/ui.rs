@@ -1347,7 +1347,7 @@ mod tests {
             name: name.into(),
             bootstrap: format!("b-1.{name}.xxxx.c2.kafka.eu-central-1.amazonaws.com:9092"),
             region: "eu-central-1".into(),
-            auth: "plaintext".into(),
+            auth: crate::config::Auth::Plaintext,
             aws_profile: None,
             prod,
         }

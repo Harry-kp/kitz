@@ -15,10 +15,9 @@ pub struct EnvProfile {
     pub bootstrap: String,
     /// AWS region of the cluster (only used for IAM auth).
     pub region: String,
-    /// Wire protocol: "iam" (SASL_SSL + MSK IAM, default), "tls" (SSL, no auth),
-    /// or "plaintext" (no TLS, no auth - typical for VPC-internal 9092).
-    #[serde(default = "default_auth")]
-    pub auth: String,
+    /// Wire protocol; defaults to IAM.
+    #[serde(default)]
+    pub auth: Auth,
     /// AWS profile to use for creds (optional; falls back to default chain).
     #[serde(default)]
     pub aws_profile: Option<String>,
@@ -27,8 +26,17 @@ pub struct EnvProfile {
     pub prod: bool,
 }
 
-fn default_auth() -> String {
-    "iam".to_string()
+#[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Auth {
+    /// SASL_SSL + MSK IAM (OAUTHBEARER), port 9098.
+    #[default]
+    Iam,
+    /// SSL, no auth, port 9094.
+    #[serde(alias = "ssl")]
+    Tls,
+    /// No TLS, no auth - typical for VPC-internal 9092.
+    Plaintext,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -57,5 +65,25 @@ impl Config {
         }
         let global = dirs::config_dir()?.join("kitz").join("config.toml");
         global.exists().then_some(global)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn auth_of(toml_auth: &str) -> Result<Auth, toml::de::Error> {
+        let raw = format!("[[env]]\nname='x'\nbootstrap='b:1'\nregion='r'\n{toml_auth}");
+        toml::from_str::<Config>(&raw).map(|c| c.envs[0].auth)
+    }
+
+    #[test]
+    fn auth_parses_all_modes_and_rejects_typos() {
+        assert_eq!(auth_of("").unwrap(), Auth::Iam);
+        assert_eq!(auth_of("auth='iam'").unwrap(), Auth::Iam);
+        assert_eq!(auth_of("auth='tls'").unwrap(), Auth::Tls);
+        assert_eq!(auth_of("auth='ssl'").unwrap(), Auth::Tls);
+        assert_eq!(auth_of("auth='plaintext'").unwrap(), Auth::Plaintext);
+        assert!(auth_of("auth='IAM'").is_err());
     }
 }

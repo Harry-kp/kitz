@@ -19,7 +19,7 @@ use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{BaseConsumer, Consumer, ConsumerContext};
 use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
 
-use crate::config::EnvProfile;
+use crate::config::{Auth, EnvProfile};
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -480,18 +480,18 @@ fn base_config(profile: &EnvProfile, debug: bool) -> ClientConfig {
     let mut cfg = ClientConfig::new();
     cfg.set("bootstrap.servers", &profile.bootstrap);
 
-    match profile.auth.as_str() {
-        "plaintext" => {
+    match profile.auth {
+        Auth::Plaintext => {
             cfg.set("security.protocol", "PLAINTEXT");
         }
-        "tls" | "ssl" => {
+        Auth::Tls => {
             cfg.set("security.protocol", "SSL");
             if let Some(ca) = ca_bundle() {
                 cfg.set("ssl.ca.location", ca);
             }
         }
-        // "iam" (default): SASL_SSL + MSK IAM via the OAUTHBEARER token callback.
-        _ => {
+        // SASL_SSL + MSK IAM via the OAUTHBEARER token callback.
+        Auth::Iam => {
             cfg.set("security.protocol", "SASL_SSL")
                 .set("sasl.mechanisms", "OAUTHBEARER");
             // librdkafka with vendored OpenSSL on macOS often can't find the
@@ -556,7 +556,7 @@ fn check_results<T>(results: Vec<Result<T, (T, rdkafka::types::RDKafkaErrorCode)
 pub fn doctor(profile: &EnvProfile) {
     println!("kitz doctor");
     println!("  env       : {}", profile.name);
-    println!("  auth      : {}", profile.auth);
+    println!("  auth      : {:?}", profile.auth);
     println!("  region    : {}", profile.region);
     println!("  bootstrap : {}", profile.bootstrap);
     println!("  aws_profile: {:?}", profile.aws_profile);
@@ -577,7 +577,7 @@ pub fn doctor(profile: &EnvProfile) {
     }
 
     println!("\n[2/3] AWS IAM token generation (are your ~/.aws creds usable?)");
-    if profile.auth == "iam" {
+    if profile.auth == Auth::Iam {
         print!("      generate_auth_token({}) … ", profile.region);
         let _ = std::io::stdout().flush();
         match gen_token(&profile.region) {
@@ -585,7 +585,7 @@ pub fn doctor(profile: &EnvProfile) {
             Err(e) => println!("FAIL: {e}"),
         }
     } else {
-        println!("      skipped (auth = {}, not IAM)", profile.auth);
+        println!("      skipped (auth = {:?}, not IAM)", profile.auth);
     }
 
     println!("\n[3/3] Full SASL_SSL handshake + metadata (verbose librdkafka log below)");
