@@ -9,7 +9,7 @@
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::config::EnvProfile;
-use crate::kafka::{EventRecord, GroupSummary, KafkaClient, TopicMeta};
+use crate::kafka::{EventRecord, GroupSummary, KafkaClient, PartitionLag, TopicMeta};
 
 /// Requests from the UI to the worker.
 pub enum Cmd {
@@ -18,6 +18,9 @@ pub enum Cmd {
     Watermarks(String),
     TopicConfig(String),
     Groups,
+    /// Committed offsets + lag for one group (the UI asks one at a time so
+    /// other requests interleave instead of waiting behind every group).
+    GroupLag(String),
     Peek(String),
     Create {
         name: String,
@@ -51,7 +54,12 @@ pub enum Evt {
         entries: Vec<(String, String)>,
     },
     Groups(Vec<GroupSummary>),
+    GroupLag {
+        group: String,
+        parts: Vec<PartitionLag>,
+    },
     Peek {
+        topic: String,
         records: Vec<EventRecord>,
     },
     /// A mutation (create/delete/+partitions) or refresh succeeded.
@@ -128,9 +136,18 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
 
             Cmd::Groups => with_client(&client, evt, |c| Ok(Evt::Groups(c.consumer_groups()?))),
 
+            // Lag failures (e.g. no Describe ACL on one group) just mean "no
+            // data" for that group - reported as empty, not as an error toast.
+            Cmd::GroupLag(group) => {
+                if let Some(c) = &client {
+                    let parts = c.group_lag(&group).unwrap_or_default();
+                    send(evt, Evt::GroupLag { group, parts });
+                }
+            }
+
             Cmd::Peek(topic) => with_client(&client, evt, |c| {
                 let records = c.peek(&topic, 50)?;
-                Ok(Evt::Peek { records })
+                Ok(Evt::Peek { topic, records })
             }),
 
             Cmd::Create {

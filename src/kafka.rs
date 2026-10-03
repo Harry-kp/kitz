@@ -73,6 +73,23 @@ pub struct GroupSummary {
     pub topics: Vec<String>,
 }
 
+/// A consumer group's position on one partition.
+#[derive(Clone)]
+pub struct PartitionLag {
+    pub topic: String,
+    pub partition: i32,
+    /// Next offset the group will read (its committed offset).
+    pub committed: i64,
+    /// Next offset to be written (high watermark).
+    pub end: i64,
+}
+
+impl PartitionLag {
+    pub fn lag(&self) -> i64 {
+        (self.end - self.committed).max(0)
+    }
+}
+
 pub struct EventRecord {
     pub partition: i32,
     pub offset: i64,
@@ -335,7 +352,50 @@ impl KafkaClient {
         check_results(res)
     }
 
-    /// Peek the last `limit` events across a topic's partitions.
+    /// Committed offsets + lag for `group` on every partition it has committed
+    /// to: one OffsetFetch covering all cluster partitions (so idle groups with
+    /// no members still show up), then a watermark round-trip per committed
+    /// partition.
+    // ponytail: one OffsetFetch over every partition per group; for clusters with
+    // tens of thousands of partitions switch to ListConsumerGroupOffsets (librdkafka
+    // admin API, not wrapped by rdkafka 0.36).
+    pub fn group_lag(&self, group: &str) -> Result<Vec<PartitionLag>> {
+        let c: BaseConsumer<MskContext> = base_config(&self.profile, false)
+            .set("group.id", group)
+            .set("enable.auto.commit", "false")
+            .create_with_context(self.ctx.clone())
+            .context("creating offsets consumer")?;
+        if self.profile.auth == Auth::Iam {
+            c.poll(Duration::from_millis(500)); // let the OAuth callback fire
+        }
+        let mut tpl = TopicPartitionList::new();
+        for t in &self.meta {
+            for p in &t.partitions {
+                tpl.add_partition(&t.name, p.id);
+            }
+        }
+        let committed = c
+            .committed_offsets(tpl, TIMEOUT)
+            .with_context(|| format!("fetching offsets for {group}"))?;
+        let mut out = Vec::new();
+        for e in committed.elements() {
+            if let Offset::Offset(off) = e.offset() {
+                let (_, end) = self
+                    .consumer
+                    .fetch_watermarks(e.topic(), e.partition(), TIMEOUT)
+                    .unwrap_or((0, off));
+                out.push(PartitionLag {
+                    topic: e.topic().to_string(),
+                    partition: e.partition(),
+                    committed: off,
+                    end,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// The latest `limit` messages of a topic, newest first.
     pub fn peek(&self, topic: &str, limit: usize) -> Result<Vec<EventRecord>> {
         let debug = std::env::var("KITZ_DEBUG").is_ok();
         let peeker: BaseConsumer<MskContext> = base_config(&self.profile, debug)
@@ -383,7 +443,14 @@ impl KafkaClient {
                 None => empty_polls += 1,
             }
         }
-        out.sort_by(|a, b| a.partition.cmp(&b.partition).then(a.offset.cmp(&b.offset)));
+        // Newest first, the way people read a log. Messages without a
+        // timestamp sort last.
+        out.sort_by(|a, b| {
+            b.timestamp
+                .cmp(&a.timestamp)
+                .then(a.partition.cmp(&b.partition))
+                .then(b.offset.cmp(&a.offset))
+        });
         Ok(out)
     }
 }

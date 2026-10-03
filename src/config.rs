@@ -86,8 +86,8 @@ impl Config {
         let path = match explicit {
             Some(p) => p.to_path_buf(),
             None => Self::locate().context(
-                "no config found - create ./kitz.toml or ~/.config/kitz/config.toml \
-                 (template: kitz.toml.example), or pass --config <path>",
+                "no config yet - run `kitz init` to create ~/.config/kitz/config.toml, \
+                 then add your clusters (or pass --config <path>)",
             )?,
         };
         let raw = std::fs::read_to_string(&path)
@@ -103,13 +103,48 @@ impl Config {
         if local.exists() {
             return Some(local);
         }
-        // Not dirs::config_dir(): on macOS that's ~/Library/Application Support,
-        // which isn't where the docs (or users) put it.
+        let global = Self::global_path()?;
+        global.exists().then_some(global)
+    }
+
+    /// `$XDG_CONFIG_HOME/kitz/config.toml`, default `~/.config/kitz/config.toml`.
+    /// Not dirs::config_dir(): on macOS that's ~/Library/Application Support,
+    /// which isn't where the docs (or users) put it.
+    pub fn global_path() -> Option<PathBuf> {
         let base = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| dirs::home_dir().map(|h| h.join(".config")))?;
-        let global = base.join("kitz").join("config.toml");
-        global.exists().then_some(global)
+        Some(base.join("kitz").join("config.toml"))
+    }
+
+    /// Write the commented starter config to the global path (`kitz init`).
+    pub fn init(force: bool) -> Result<PathBuf> {
+        let path = Self::global_path().context("can't find your home directory")?;
+        anyhow::ensure!(
+            force || !path.exists(),
+            "{} already exists (use --force to overwrite)",
+            path.display()
+        );
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        }
+        std::fs::write(&path, include_str!("../kitz.toml.example"))
+            .with_context(|| format!("writing {}", path.display()))?;
+        Ok(path)
+    }
+
+    /// Index of the env called `name`, or an error listing the valid names.
+    pub fn env_index(&self, name: &str) -> Result<usize> {
+        self.envs
+            .iter()
+            .position(|e| e.name == name)
+            .with_context(|| {
+                let names: Vec<_> = self.envs.iter().map(|e| e.name.as_str()).collect();
+                format!(
+                    "no env named '{name}' in config (have: {})",
+                    names.join(", ")
+                )
+            })
     }
 }
 

@@ -31,7 +31,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # TUI (palette borrowed from vortix)
 ratatui = { version = "0.29", features = ["unstable-rendered-line-info"] }  # Paragraph::line_count sizes the error modal
 crossterm = "0.28"
-ratatui-flip-panel = "0.1"   # animated card-flip for the Detail⟷Config pane
 
 # CLI
 clap = { version = "4", features = ["derive"] }

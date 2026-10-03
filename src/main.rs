@@ -13,7 +13,7 @@ mod worker;
 
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use crossterm::event::{self, Event};
 
@@ -26,11 +26,20 @@ use crate::config::Config;
 /// live topic / consumer-group inspection. Run with no arguments to launch the
 /// TUI. Config is read from ./kitz.toml or ~/.config/kitz/config.toml.
 #[derive(Parser)]
-#[command(name = "kitz", version, about, long_about = None)]
+#[command(
+    name = "kitz",
+    version,
+    about,
+    long_about = None,
+    args_conflicts_with_subcommands = true
+)]
 struct Cli {
     /// Config file to use instead of ./kitz.toml / ~/.config/kitz/config.toml.
     #[arg(long, short, global = true, value_name = "PATH")]
     config: Option<std::path::PathBuf>,
+
+    /// Environment to open straight away (skips the picker).
+    env: Option<String>,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -38,6 +47,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Create a starter config at ~/.config/kitz/config.toml.
+    Init {
+        /// Overwrite an existing config.
+        #[arg(long)]
+        force: bool,
+    },
     /// Diagnose connectivity for an environment (TCP → IAM token → SASL_SSL
     /// handshake), with verbose librdkafka logs. No TUI.
     Doctor {
@@ -50,30 +65,36 @@ fn main() -> Result<()> {
     // clap handles --help/--version/bad-args and exits before we touch config.
     let cli = Cli::parse();
 
+    if let Some(Command::Init { force }) = cli.command {
+        let path = Config::init(force)?;
+        println!("created {}", path.display());
+        println!("next: edit it to add your clusters, then run `kitz`");
+        return Ok(());
+    }
+
     let config = Config::load(cli.config.as_deref())?;
 
     match cli.command {
+        Some(Command::Init { .. }) => unreachable!("handled above"),
         Some(Command::Doctor { env }) => {
-            let env = match env {
-                Some(name) => config
-                    .envs
-                    .iter()
-                    .find(|e| e.name == name)
-                    .with_context(|| {
-                        let names: Vec<_> = config.envs.iter().map(|e| e.name.as_str()).collect();
-                        format!(
-                            "no env named '{name}' in config (have: {})",
-                            names.join(", ")
-                        )
-                    })?,
-                None => &config.envs[0],
-            };
-            anyhow::ensure!(kafka::doctor(env), "doctor found problems (see above)");
+            let idx = env.map_or(Ok(0), |name| config.env_index(&name))?;
+            anyhow::ensure!(
+                kafka::doctor(&config.envs[idx]),
+                "doctor found problems (see above)"
+            );
             Ok(())
         }
         None => {
+            // `kitz stag` opens stag; a single-env config needs no picker.
+            let start = match &cli.env {
+                Some(name) => Some(config.env_index(name)?),
+                None => (config.envs.len() == 1).then_some(0),
+            };
             let restore_stderr = stderr_to_log_file();
             let mut app = App::new(config);
+            if let Some(i) = start {
+                app.connect_to(i);
+            }
             let mut terminal = ratatui::init();
             let result = run(&mut terminal, &mut app);
             ratatui::restore();
@@ -115,10 +136,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {
 
         terminal.draw(|frame| ui::render(frame, app))?;
 
-        // Tighten the frame budget while the flip animation is mid-flight so the
-        // card-flip is smooth (~60fps); otherwise a relaxed 100ms tick.
-        let budget = if app.animating() { 16 } else { 100 };
-        if event::poll(Duration::from_millis(budget))? {
+        if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == event::KeyEventKind::Press {
                     app.on_key(key)?;

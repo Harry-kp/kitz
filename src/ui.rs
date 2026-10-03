@@ -10,12 +10,12 @@ use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Row, Sparkline, Table,
+    Block, BorderType, Borders, Clear, List, ListItem, Padding, Paragraph, Row, Table, TableState,
     Wrap,
 };
 use ratatui::Frame;
 
-use crate::app::{App, Modal, Panel, Screen};
+use crate::app::{App, Modal, Screen, View};
 use crate::theme;
 
 const MIN_W: u16 = 72;
@@ -46,7 +46,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     match app.screen {
         Screen::EnvSelect => render_env_select(frame, app),
         Screen::Main => render_main(frame, app),
-        Screen::Groups => render_groups_screen(frame, app),
     }
 
     if app.connecting.is_some() {
@@ -67,7 +66,6 @@ fn render_toast(frame: &mut Frame, app: &App) {
     let (label, color) = match t.level {
         crate::app::ToastLevel::Info => (" INFO ", theme::ACCENT),
         crate::app::ToastLevel::Success => (" OK ", theme::SUCCESS),
-        crate::app::ToastLevel::Warning => (" WARN ", theme::WARNING),
         crate::app::ToastLevel::Error => (" ERROR ", theme::ERROR),
     };
 
@@ -128,24 +126,6 @@ fn panel(title: &str, focused: bool) -> Block<'static> {
         ))
 }
 
-fn highlight(focused: bool) -> (Style, &'static str) {
-    if focused {
-        (
-            Style::default()
-                .bg(theme::ROW_SELECTED_BG)
-                .fg(theme::ROW_SELECTED_FG)
-                .add_modifier(Modifier::BOLD),
-            "▶ ",
-        )
-    } else {
-        (Style::default().fg(theme::TEXT_MUTED), "  ")
-    }
-}
-
-fn sep() -> Span<'static> {
-    Span::styled("  │  ", Style::default().fg(theme::SEPARATOR))
-}
-
 fn spinner(app: &App) -> &'static str {
     let ms = app
         .connecting
@@ -186,16 +166,17 @@ fn footer(frame: &mut Frame, area: Rect, lead: Option<&str>, hints: &[(&str, &st
             Style::default().fg(theme::ACCENT_LIGHT),
         ));
     }
+    let used = Line::from(spans.clone()).width() as u16;
     // Transparent (no filled bar) - sits on the app bg.
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::APP_BG)),
         area,
     );
 
-    // Brand + version, bottom-right, muted (moved here from the header).
+    // Brand + version, bottom-right, muted - only when it doesn't collide.
     let brand = format!("{} v{} ", theme::NAME, theme::VERSION);
     let bw = brand.chars().count() as u16;
-    if area.width > bw + 6 {
+    if area.width > used + bw + 2 {
         let br = Rect::new(area.right().saturating_sub(bw), area.y, bw, 1);
         frame.render_widget(
             Paragraph::new(Span::styled(brand, Style::default().fg(theme::TEXT_MUTED)))
@@ -353,604 +334,652 @@ fn render_connecting(frame: &mut Frame, app: &App) {
     );
 }
 
-// ── Main dashboard ─────────────────────────────────────────────────────
+// ── Main screen: [list | detail] for the active view ─────────────────────
 
 fn render_main(frame: &mut Frame, app: &mut App) {
-    let rows = Layout::vertical([
+    let [head, body, foot] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(1),
         Constraint::Length(1),
     ])
-    .split(frame.area());
+    .areas(frame.area());
 
-    render_header(frame, rows[0], app);
+    render_header(frame, head, app);
 
-    if app.zoom {
-        match app.focus {
-            Panel::Topics => render_topics(frame, rows[1], app, true),
-            Panel::Graph => render_graph(frame, rows[1], app, true),
-            Panel::Detail if app.flip.showing_back() => render_config(frame, rows[1], app, true),
-            Panel::Detail => render_detail(frame, rows[1], app, true),
-            Panel::Logs => render_logs(frame, rows[1], app, true),
+    let list_w = (body.width * 36 / 100).clamp(30, 56);
+    let [left, right] =
+        Layout::horizontal([Constraint::Length(list_w), Constraint::Min(1)]).areas(body);
+    match app.view {
+        View::Topics => {
+            render_topic_list(frame, left, app);
+            render_topic_detail(frame, right, app);
         }
-    } else {
-        // Aligned 2×2 grid: left column 32%, top row 55% (both columns share
-        // the split so the boundaries line up).
-        let grid = Layout::vertical([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(rows[1]);
-        let split = [Constraint::Percentage(32), Constraint::Percentage(68)];
-        let top = Layout::horizontal(split).split(grid[0]);
-        let bot = Layout::horizontal(split).split(grid[1]);
-
-        render_topics(frame, top[0], app, app.focus == Panel::Topics);
-        render_graph(frame, top[1], app, app.focus == Panel::Graph);
-        render_flip_pane(frame, bot[0], app, app.focus == Panel::Detail);
-        render_logs(frame, bot[1], app, app.focus == Panel::Logs);
+        View::Groups => {
+            render_group_list(frame, left, app);
+            render_group_detail(frame, right, app);
+        }
     }
 
-    // Footer stays lean - the essentials for this pane. Everything else lives
-    // behind `x` (actions) and `?` (help).
-    let (pane_name, hints): (&str, &[(&str, &str)]) = match app.focus {
-        Panel::Topics => (
-            "TOPICS",
-            &[
-                ("↑↓", "move"),
-                ("⇥", "pane"),
-                ("/", "find"),
-                ("p", "peek"),
-                ("x", "actions"),
-                ("?", "help"),
-            ],
-        ),
-        Panel::Graph => (
-            "GRAPH",
-            &[
-                ("⇥", "pane"),
-                ("w", "track"),
-                ("G", "groups"),
-                ("x", "actions"),
-                ("?", "help"),
-            ],
-        ),
-        Panel::Detail if app.flip.showing_back() => (
-            "CONFIG",
-            &[
-                ("f", "flip→detail"),
-                ("⇥", "pane"),
-                ("x", "actions"),
-                ("?", "help"),
-            ],
-        ),
-        Panel::Detail => (
-            "DETAIL",
-            &[
-                ("↑↓", "scroll"),
-                ("f", "flip→config"),
-                ("w", "track"),
-                ("p", "peek"),
-                ("x", "actions"),
-                ("?", "help"),
-            ],
-        ),
-        Panel::Logs => (
-            "LOGS",
-            &[
-                ("↑↓", "scroll"),
-                ("⇥", "pane"),
-                ("x", "actions"),
-                ("?", "help"),
-            ],
-        ),
+    let hints: &[(&str, &str)] = match app.view {
+        View::Topics => &[
+            ("↑↓", "move"),
+            ("↵", "messages"),
+            ("/", "filter"),
+            ("⇥", "groups"),
+            ("c", "create"),
+            ("x", "more"),
+            ("?", "help"),
+        ],
+        View::Groups => &[
+            ("↑↓", "move"),
+            ("↵", "open topic"),
+            ("/", "filter"),
+            ("⇥", "topics"),
+            ("d", "delete"),
+            ("x", "more"),
+            ("?", "help"),
+        ],
     };
-    footer(frame, rows[2], Some(pane_name), hints, &app.status);
+    footer(frame, foot, None, hints, &app.status);
 }
 
-/// Header = environment switcher strip + counts + live dot. Active env
-/// highlighted; prod red. Press 1-9 to hot-switch. (Brand lives in the footer.)
+/// Tabs on the left, environments on the right (active one filled; prod red).
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
-    let mut spans = vec![Span::styled(
-        " env ",
-        Style::default().fg(theme::TEXT_MUTED),
-    )];
+    let tab = |label: String, active: bool| {
+        if active {
+            Span::styled(
+                format!(" {label} "),
+                Style::default()
+                    .bg(theme::ACCENT)
+                    .fg(theme::PANEL_BG)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Span::styled(format!(" {label} "), Style::default().fg(theme::TEXT_MUTED))
+        }
+    };
+    let groups = if app.groups_loaded {
+        app.groups.len().to_string()
+    } else {
+        "…".into()
+    };
+    let tabs = Line::from(vec![
+        Span::raw(" "),
+        tab(
+            format!("Topics {}", app.topic_count()),
+            app.view == View::Topics,
+        ),
+        Span::raw(" "),
+        tab(
+            format!("Consumer groups {groups}"),
+            app.view == View::Groups,
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(tabs), area);
 
     let active = app.current_env_index();
-    let env_style = |i: usize, prod: bool| {
-        if active == Some(i) {
-            Style::default()
-                .bg(if prod { theme::ERROR } else { theme::ACCENT })
+    let mut envs: Vec<Span> = Vec::new();
+    for (i, e) in app.config.envs.iter().enumerate().take(9) {
+        // ● marks the active env in text too, not only by colour.
+        let label = format!(
+            " {}{} {}{} ",
+            if active == Some(i) { "●" } else { " " },
+            i + 1,
+            e.name,
+            if e.prod { " PROD" } else { "" }
+        );
+        let style = match (active == Some(i), e.prod) {
+            (true, true) => Style::default()
+                .bg(theme::ERROR)
                 .fg(theme::PANEL_BG)
-                .add_modifier(Modifier::BOLD)
-        } else if prod {
-            Style::default().fg(theme::ERROR)
-        } else {
-            Style::default().fg(theme::TEXT_MUTED)
-        }
-    };
-    let label = |i: usize, e: &crate::config::EnvProfile| {
-        format!(" {}·{}{} ", i + 1, e.name, if e.prod { " ⚠" } else { "" })
-    };
-
-    // Budget the strip so it never clips the counts / live dot; overflow → +N.
-    let counts_text = if app.groups_loaded {
-        format!("{} topics · {} groups", app.topic_count(), app.groups.len())
-    } else {
-        format!("{} topics", app.topic_count())
-    };
-    let tail =
-        counts_text.chars().count() + 8 /* " ● live" + sep */ + if app.zoom { 10 } else { 0 };
-    let budget = (area.width as usize).saturating_sub(5 + tail + 6);
-
-    let mut used = 0usize;
-    let mut shown = 0usize;
-    for (i, e) in app.config.envs.iter().enumerate() {
-        let lbl = label(i, e);
-        let w = lbl.chars().count();
-        if used + w > budget {
-            break;
-        }
-        used += w;
-        shown += 1;
-        spans.push(Span::styled(lbl, env_style(i, e.prod)));
+                .add_modifier(Modifier::BOLD),
+            (true, false) => Style::default()
+                .fg(theme::SUCCESS)
+                .add_modifier(Modifier::BOLD),
+            (false, true) => Style::default().fg(theme::ERROR),
+            (false, false) => Style::default().fg(theme::TEXT_MUTED),
+        };
+        envs.push(Span::styled(label, style));
     }
-    // Guarantee the active env is visible even if it fell past the budget.
-    if let Some(a) = active {
-        if a >= shown {
-            let e = &app.config.envs[a];
-            spans.push(Span::styled(label(a, e), env_style(a, e.prod)));
-        }
-    }
-    let dropped = app.config.envs.len().saturating_sub(shown);
-    if dropped > 0 {
-        spans.push(Span::styled(
-            format!(" +{dropped}"),
-            Style::default().fg(theme::TEXT_MUTED),
-        ));
-    }
-
-    if app.zoom {
-        spans.push(Span::styled(
-            "  ⛶ zoomed",
-            Style::default().fg(theme::WARNING),
-        ));
-    }
-    spans.push(sep());
-    spans.push(Span::styled(
-        counts_text,
-        Style::default().fg(theme::TEXT_MUTED),
-    ));
-    spans.push(Span::styled(
-        "   ● live",
-        Style::default()
-            .fg(theme::SUCCESS)
-            .add_modifier(Modifier::BOLD),
-    ));
-
-    // Transparent header - no filled bar.
+    // Only as many envs as fit after the tabs; the active one always shows.
+    let room = area.width.saturating_sub(48) as usize;
+    let mut used = 0;
+    let shown: Vec<Span> = envs
+        .into_iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            used += s.width();
+            used <= room || active == Some(*i)
+        })
+        .map(|(_, s)| s)
+        .collect();
     frame.render_widget(
-        Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::APP_BG)),
+        Paragraph::new(Line::from(shown)).alignment(Alignment::Right),
         area,
     );
 }
 
-fn render_topics(frame: &mut Frame, area: Rect, app: &mut App, focused: bool) {
-    let visible = app.filtered_topics();
-    let items: Vec<ListItem> = visible
-        .iter()
-        .map(|&i| {
-            let (name, parts) = app.topic_row(i);
-            ListItem::new(Line::from(vec![
-                Span::styled(
-                    format!("{:<34}", truncate(name, 34)),
-                    Style::default().fg(theme::TEXT),
-                ),
-                Span::styled(format!("{parts:>3}p"), Style::default().fg(theme::ACCENT)),
-            ]))
-        })
-        .collect();
-
-    let title = if app.filtering || !app.filter.is_empty() {
-        format!("Topics · /{}", app.filter)
+fn list_title(app: &App, noun: &str, total: usize) -> String {
+    if app.filtering || !app.filter.is_empty() {
+        format!(
+            "{noun} · /{}{}",
+            app.filter,
+            if app.filtering { "▌" } else { "" }
+        )
     } else {
-        format!("Topics · {}", app.topic_count())
-    };
-    if visible.is_empty() && !app.filter.is_empty() {
-        frame.render_widget(
-            Paragraph::new(format!(
-                "  no topics match \"{}\"\n  esc clears the filter",
-                app.filter
-            ))
-            .style(Style::default().fg(theme::TEXT_MUTED))
-            .block(panel(&title, focused)),
-            area,
-        );
-        return;
+        format!("{noun} · {total}")
     }
-    let (hl, sym) = highlight(focused);
-    let list = List::new(items)
-        .block(panel(&title, focused))
-        .highlight_style(hl)
-        .highlight_symbol(sym);
-    frame.render_stateful_widget(list, area, &mut app.topic_state);
 }
 
-fn render_detail(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
-    let Some(d) = &app.detail else {
-        frame.render_widget(
-            Paragraph::new("  select a topic")
-                .style(Style::default().fg(theme::TEXT_MUTED))
-                .block(panel("Detail", focused)),
-            area,
-        );
-        return;
-    };
+fn empty_list(frame: &mut Frame, area: Rect, title: &str, msg: String) {
+    frame.render_widget(
+        Paragraph::new(msg)
+            .style(Style::default().fg(theme::TEXT_MUTED))
+            .block(panel(title, true)),
+        area,
+    );
+}
 
-    let kv = |k: &str, v: Span<'static>| {
-        Line::from(vec![
-            Span::styled(format!("  {k:<12}"), Style::default().fg(theme::TEXT_MUTED)),
-            v,
-        ])
-    };
-
-    let events = if d.watermarks_loaded {
-        Span::styled(
-            fmt_count(d.total_messages()),
-            Style::default().fg(theme::SUCCESS),
-        )
-    } else if app.loading_watermarks {
-        Span::styled(
-            format!("{} loading…", spinner(app)),
-            Style::default().fg(theme::WARNING),
-        )
-    } else {
-        Span::styled("w to load", Style::default().fg(theme::TEXT_MUTED))
-    };
-
-    let cell = |v: i64| {
-        if v < 0 {
-            "-".to_string()
+fn render_topic_list(frame: &mut Frame, area: Rect, app: &mut App) {
+    let visible = app.filtered_topics();
+    let title = list_title(app, "Topics", app.topic_count());
+    if visible.is_empty() {
+        let msg = if app.filter.is_empty() {
+            "\n  this cluster has no topics yet\n\n  c  create one".to_string()
         } else {
-            v.to_string()
-        }
-    };
-
-    // Consumer groups actually subscribed to this topic.
-    let consumers = {
-        let g = app.groups_for_topic(&d.name);
-        if !app.groups_loaded {
-            Span::styled(
-                format!("{} loading…", spinner(app)),
-                Style::default().fg(theme::WARNING),
+            format!(
+                "\n  no topics match \"{}\"\n  esc clears the filter",
+                app.filter
             )
-        } else if g.is_empty() {
-            Span::styled("none", Style::default().fg(theme::TEXT_MUTED))
-        } else {
-            let count = g.len();
-            Span::styled(
-                format!("{count} · {}", truncate(&g.join(", "), 16)),
-                Style::default().fg(theme::ACCENT),
-            )
-        }
-    };
+        };
+        return empty_list(frame, area, &title, msg);
+    }
+    // borders 2 + highlight 1 + count column 9 + gap 1
+    let name_w = area.width.saturating_sub(13) as usize;
+    let rows: Vec<Row> = visible
+        .iter()
+        .map(|&i| {
+            let t = &app.meta[i];
+            let count = app
+                .counts
+                .get(&t.name)
+                .map(|c| fmt_count(*c))
+                .unwrap_or_default();
+            Row::new(vec![
+                Span::styled(truncate(&t.name, name_w), Style::default().fg(theme::TEXT)),
+                Span::styled(
+                    format!("{count:>9}"),
+                    Style::default().fg(theme::TEXT_MUTED),
+                ),
+            ])
+        })
+        .collect();
+    let table = Table::new(rows, [Constraint::Min(10), Constraint::Length(9)])
+        .block(panel(&title, true))
+        .row_highlight_style(
+            Style::default()
+                .bg(theme::ROW_SELECTED_BG)
+                .fg(theme::ROW_SELECTED_FG)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▌");
+    let mut state = TableState::default().with_selected(app.topic_state.selected());
+    *state.offset_mut() = app.topic_state.offset();
+    frame.render_stateful_widget(table, area, &mut state);
+    *app.topic_state.offset_mut() = state.offset();
+}
 
-    let mut lines = vec![
-        kv(
-            "topic",
-            Span::styled(
-                // 2 borders + 2 indent + 12 label.
-                truncate(&d.name, area.width.saturating_sub(16) as usize),
-                Style::default()
-                    .fg(theme::ACCENT_LIGHT)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ),
-        kv(
-            "partitions",
-            Span::styled(
-                d.partitions.len().to_string(),
-                Style::default().fg(theme::TEXT),
-            ),
-        ),
-        kv("~events", events),
-        kv("consumers", consumers),
-        Line::from(""),
-    ];
-
-    // Width-adaptive partition table: drop the `low` column when the pane is
-    // narrow (dashboard at 25% width); show it when zoomed to full width.
-    let wide = area.width >= 40;
-    let header = if wide {
-        format!("  {:<3}{:<5}{:>10}{:>10}", "id", "isr", "low", "high")
-    } else {
-        format!("  {:<3}{:<5}{:>11}", "id", "isr", "high")
-    };
-    lines.push(Line::from(Span::styled(
-        header,
+fn heading(text: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("  {text}"),
         Style::default()
             .fg(theme::TEXT_MUTED)
             .add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn loading_line(app: &App, what: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("  {} {what}", spinner(app)),
+        Style::default().fg(theme::WARNING),
+    ))
+}
+
+fn render_topic_detail(frame: &mut Frame, area: Rect, app: &App) {
+    let Some(d) = &app.detail else {
+        return empty_list(frame, area, "Topic", "\n  no topic selected".into());
+    };
+    let muted = Style::default().fg(theme::TEXT_MUTED);
+    let strong = Style::default()
+        .fg(theme::TEXT)
+        .add_modifier(Modifier::BOLD);
+
+    // ── Headline numbers ──
+    let messages = if d.watermarks_loaded {
+        Span::styled(fmt_count(d.total_messages()), strong)
+    } else {
+        Span::styled(
+            format!("{} ", spinner(app)),
+            Style::default().fg(theme::WARNING),
+        )
+    };
+    let rf = d.partitions.first().map_or(0, |p| p.replicas);
+    let under = d.partitions.iter().filter(|p| p.isr < p.replicas).count();
+    let mut stats = vec![
+        Span::raw("  "),
+        messages,
+        Span::styled(" messages   ", muted),
+        Span::styled(d.partitions.len().to_string(), strong),
+        Span::styled(" partitions   ", muted),
+        Span::styled(format!("RF {rf}"), strong),
+    ];
+    if under > 0 {
+        stats.push(Span::styled(
+            format!("   ⚠ {under} under-replicated"),
+            Style::default()
+                .fg(theme::WARNING)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    if app.rate.iter().all(|&r| r == 0) {
+        if !app.rate.is_empty() {
+            stats.push(Span::styled("   idle", muted));
+        }
+    } else if let Some(now) = app.rate.last() {
+        stats.push(Span::styled("   ", muted));
+        stats.push(Span::styled(
+            format!("{} msg/s ", fmt_count(*now as i64)),
+            Style::default()
+                .fg(theme::SUCCESS)
+                .add_modifier(Modifier::BOLD),
+        ));
+        stats.push(Span::styled(
+            spark(&app.rate, 24),
+            Style::default().fg(theme::ACCENT),
+        ));
+    }
+    let mut lines = vec![Line::from(""), Line::from(stats)];
+
+    // ── Config, in human units ──
+    match &app.topic_config {
+        Some((t, entries)) if *t == d.name => {
+            let get = |k: &str| {
+                entries
+                    .iter()
+                    .find(|(key, _)| key == k)
+                    .map(|(_, v)| v.as_str())
+            };
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(v) = get("retention.ms") {
+                parts.push(format!("retention {}", human_ms(v)));
+            }
+            if let Some(v) = get("retention.bytes").filter(|v| *v != "-1") {
+                parts.push(format!("max size {}", human_bytes(v)));
+            }
+            if let Some(v) = get("cleanup.policy") {
+                parts.push(format!("cleanup {v}"));
+            }
+            if let Some(v) = get("min.insync.replicas") {
+                parts.push(format!("min ISR {v}"));
+            }
+            if let Some(v) = get("max.message.bytes") {
+                parts.push(format!("max message {}", human_bytes(v)));
+            }
+            if let Some(v) = get("compression.type").filter(|v| *v != "producer") {
+                parts.push(format!("compression {v}"));
+            }
+            if parts.is_empty() {
+                // e.g. "(unavailable)" when DescribeConfigs isn't permitted
+                parts = entries.iter().map(|(k, v)| format!("{k} {v}")).collect();
+            }
+            lines.push(Line::from(Span::styled(
+                format!("  {}", parts.join(" · ")),
+                muted,
+            )));
+        }
+        _ => lines.push(loading_line(app, "loading config…")),
+    }
+
+    // ── Who reads it ──
+    // Name column takes whatever the fixed columns leave (borders 2, indent 2).
+    let inner = area.width.saturating_sub(4) as usize;
+    let gname_w = inner.saturating_sub(9 + 10).max(12);
+    lines.push(Line::from(""));
+    lines.push(heading(&format!(
+        "{:<gname_w$}{:>9}  state",
+        "CONSUMER GROUPS", "lag"
     )));
-    for p in &d.partitions {
-        let isr = format!("{}/{}", p.isr, p.replicas);
-        lines.push(Line::from(if wide {
-            format!(
-                "  {:<3}{:<5}{:>10}{:>10}",
-                p.id,
-                isr,
-                cell(p.low),
-                cell(p.high)
-            )
+    let consumers = app.consumers_of(&d.name);
+    if !app.groups_loaded {
+        lines.push(loading_line(app, "loading consumer groups…"));
+    } else if consumers.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  none - no group has read this topic",
+            muted,
+        )));
+    }
+    for (g, lag) in consumers {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {:<gname_w$}", truncate(&g.name, gname_w)),
+                Style::default().fg(theme::TEXT),
+            ),
+            lag_span(lag, 9),
+            Span::styled(format!("  {}", g.state), state_style(&g.state)),
+        ]));
+    }
+
+    // ── Partitions ── (narrow panes drop "first offset", the least useful)
+    let wide = inner >= 70;
+    lines.push(Line::from(""));
+    lines.push(heading(&if wide {
+        format!(
+            "{:<10}{:>10}{:>18}{:>16}{:>14}",
+            "PARTITION", "in-sync", "first offset", "next offset", "messages"
+        )
+    } else {
+        format!(
+            "{:<6}{:>9}{:>14}{:>13}",
+            "PART", "in-sync", "next offset", "messages"
+        )
+    }));
+    let cell = |v: i64| {
+        if v < 0 {
+            "…".to_string()
         } else {
-            format!("  {:<3}{:<5}{:>11}", p.id, isr, cell(p.high))
+            fmt_count(v)
+        }
+    };
+    for p in &d.partitions {
+        let isr_style = if p.isr < p.replicas {
+            Style::default().fg(theme::WARNING)
+        } else {
+            muted
+        };
+        let msgs = if p.high < 0 { -1 } else { p.high - p.low };
+        let isr = format!("{}/{}", p.isr, p.replicas);
+        let text = Style::default().fg(theme::TEXT);
+        lines.push(Line::from(if wide {
+            vec![
+                Span::styled(format!("  {:<10}", p.id), text),
+                Span::styled(format!("{isr:>10}"), isr_style),
+                Span::styled(format!("{:>18}", cell(p.low)), muted),
+                Span::styled(format!("{:>16}", cell(p.high)), muted),
+                Span::styled(format!("{:>14}", cell(msgs)), text),
+            ]
+        } else {
+            vec![
+                Span::styled(format!("  {:<6}", p.id), text),
+                Span::styled(format!("{isr:>9}"), isr_style),
+                Span::styled(format!("{:>14}", cell(p.high)), muted),
+                Span::styled(format!("{:>13}", cell(msgs)), text),
+            ]
         }));
     }
 
-    // No wrap: long lines clip cleanly instead of wrapping in the narrow pane.
+    let title = truncate(&d.name, area.width.saturating_sub(6) as usize);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(panel("Detail · f→config", focused))
+            .block(panel(&title, false))
+            .wrap(Wrap { trim: false })
             .scroll((app.detail_scroll, 0)),
         area,
     );
 }
 
-fn render_groups(frame: &mut Frame, area: Rect, app: &mut App, focused: bool) {
-    if !app.groups_loaded {
-        let msg = if app.loading_groups {
-            format!("  {} loading consumer groups…", spinner(app))
-        } else {
-            "  focus this panel (⇥) to load consumer groups".to_string()
-        };
-        frame.render_widget(
-            Paragraph::new(msg)
-                .style(Style::default().fg(theme::TEXT_MUTED))
-                .block(panel("Consumer groups", focused)),
-            area,
-        );
-        return;
-    }
+fn state_style(state: &str) -> Style {
+    Style::default().fg(match state {
+        "Stable" => theme::SUCCESS,
+        "Empty" | "Dead" => theme::INACTIVE,
+        _ => theme::WARNING,
+    })
+}
 
-    let header = Row::new(vec!["group", "state", "members", "protocol"]).style(
-        Style::default()
-            .fg(theme::TEXT_MUTED)
-            .add_modifier(Modifier::BOLD),
-    );
-    let rows: Vec<Row> = app
-        .groups
+/// Right-aligned lag; amber when non-zero, "…" while loading, "-" if none.
+fn lag_span(lag: Option<i64>, width: usize) -> Span<'static> {
+    match lag {
+        Some(0) => Span::styled(
+            format!("{:>width$}", 0),
+            Style::default().fg(theme::SUCCESS),
+        ),
+        Some(n) => Span::styled(
+            format!("{:>width$}", fmt_count(n)),
+            Style::default()
+                .fg(theme::WARNING)
+                .add_modifier(Modifier::BOLD),
+        ),
+        None => Span::styled(
+            format!("{:>width$}", "-"),
+            Style::default().fg(theme::TEXT_MUTED),
+        ),
+    }
+}
+
+fn render_group_list(frame: &mut Frame, area: Rect, app: &mut App) {
+    let title = list_title(app, "Consumer groups", app.groups.len());
+    if !app.groups_loaded {
+        return empty_list(
+            frame,
+            area,
+            &title,
+            format!("\n  {} loading consumer groups…", spinner(app)),
+        );
+    }
+    let visible = app.filtered_groups();
+    if visible.is_empty() {
+        let msg = if app.filter.is_empty() {
+            "\n  no consumer groups on this cluster".to_string()
+        } else {
+            format!(
+                "\n  no groups match \"{}\"\n  esc clears the filter",
+                app.filter
+            )
+        };
+        return empty_list(frame, area, &title, msg);
+    }
+    let name_w = area.width.saturating_sub(12) as usize;
+    let rows: Vec<Row> = visible
         .iter()
-        .map(|g| {
-            let state_color = match g.state.as_str() {
-                "Stable" => theme::SUCCESS,
-                "Empty" | "Dead" => theme::INACTIVE,
-                _ => theme::WARNING,
+        .map(|&i| {
+            let g = &app.groups[i];
+            let lag = if app.lags.contains_key(&g.name) {
+                lag_span(app.group_lag(&g.name), 8)
+            } else {
+                Span::styled(
+                    format!("{:>8}", spinner(app)),
+                    Style::default().fg(theme::TEXT_MUTED),
+                )
             };
             Row::new(vec![
-                Span::styled(truncate(&g.name, 40), Style::default().fg(theme::TEXT)),
-                Span::styled(g.state.clone(), Style::default().fg(state_color)),
-                Span::styled(g.members.to_string(), Style::default().fg(theme::ACCENT)),
-                Span::styled(g.protocol.clone(), Style::default().fg(theme::TEXT_MUTED)),
+                Span::styled(truncate(&g.name, name_w), Style::default().fg(theme::TEXT)),
+                lag,
             ])
         })
         .collect();
-    let (hl, sym) = highlight(focused);
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Percentage(48),
-            Constraint::Length(12),
-            Constraint::Length(9),
-            Constraint::Min(6),
-        ],
-    )
-    .header(header)
-    .block(panel(
-        &format!("Consumer groups · {}", app.groups.len()),
-        focused,
-    ))
-    .row_highlight_style(hl)
-    .highlight_symbol(sym);
+    let table = Table::new(rows, [Constraint::Min(10), Constraint::Length(8)])
+        .header(Row::new(vec![
+            Span::raw(""),
+            Span::styled("     lag", Style::default().fg(theme::TEXT_MUTED)),
+        ]))
+        .block(panel(&title, true))
+        .row_highlight_style(
+            Style::default()
+                .bg(theme::ROW_SELECTED_BG)
+                .fg(theme::ROW_SELECTED_FG)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▌");
     frame.render_stateful_widget(table, area, &mut app.group_state);
 }
 
-/// Topic config panel (top-right) - the day-to-day "what's this topic set to?"
-/// glance: retention, cleanup policy, min ISR, etc. Follows the highlight.
-fn render_config(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
-    let lines: Vec<Line> = match &app.topic_config {
-        _ if app.detail.is_none() => {
-            vec![Line::from(Span::styled(
-                "  select a topic",
-                Style::default().fg(theme::TEXT_MUTED),
-            ))]
-        }
-        Some((topic, entries))
-            if app
-                .detail
-                .as_ref()
-                .map(|d| &d.name == topic)
-                .unwrap_or(false) =>
-        {
-            entries
-                .iter()
-                .map(|(k, v)| {
-                    Line::from(vec![
-                        Span::styled(format!("  {k:<20}"), Style::default().fg(theme::TEXT_MUTED)),
-                        Span::styled(v.clone(), Style::default().fg(theme::TEXT)),
-                    ])
-                })
-                .collect()
-        }
-        _ => vec![Line::from(Span::styled(
-            format!("  {} loading…", spinner(app)),
+fn render_group_detail(frame: &mut Frame, area: Rect, app: &App) {
+    let Some(g) = app.selected_group() else {
+        return empty_list(frame, area, "Group", String::new());
+    };
+    let muted = Style::default().fg(theme::TEXT_MUTED);
+    let strong = Style::default()
+        .fg(theme::TEXT)
+        .add_modifier(Modifier::BOLD);
+    let lag = app.group_lag(&g.name);
+    let mut summary = vec![
+        Span::raw("  "),
+        Span::styled(
+            g.state.clone(),
+            state_style(&g.state).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("   ", muted),
+        Span::styled(g.members.to_string(), strong),
+        Span::styled(
+            if g.members == 1 {
+                " member"
+            } else {
+                " members"
+            },
+            muted,
+        ),
+        Span::styled("   lag ", muted),
+        lag_span(lag, 0),
+    ];
+    if !g.protocol.is_empty() {
+        summary.push(Span::styled(format!("   {} assignor", g.protocol), muted));
+    }
+    let mut lines = vec![Line::from(""), Line::from(summary)];
+    if g.members == 0 && lag.unwrap_or(0) > 0 {
+        lines.push(Line::from(Span::styled(
+            "  ⚠ no active members - nothing is consuming this group",
             Style::default().fg(theme::WARNING),
-        ))],
-    };
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(panel("Config · f→detail", focused))
-            .wrap(Wrap { trim: false }),
-        area,
-    );
-}
-
-/// Live incoming-events graph (top-right). Sparkline of events/interval for the
-/// topic opted into via `w`, plus current + peak.
-fn render_graph(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
-    let title = match &app.rate_topic {
-        Some(t) => format!("Events/s · {}", truncate(t, 28)),
-        None => "Events/s".to_string(),
-    };
-    let block = panel(&title, focused);
-
-    if app.rate_topic.is_none() {
-        frame.render_widget(
-            Paragraph::new("\n  press w on a topic to track its\n  incoming event rate live")
-                .style(Style::default().fg(theme::TEXT_MUTED))
-                .block(block),
-            area,
-        );
-        return;
+        )));
     }
-    if app.rate.len() < 2 {
-        frame.render_widget(
-            Paragraph::new(format!("\n  {} sampling…", spinner(app)))
-                .style(Style::default().fg(theme::WARNING))
-                .block(block),
-            area,
-        );
-        return;
-    }
+    let topics = app.group_topics(g);
+    lines.push(Line::from(vec![
+        Span::styled("  reads  ", muted),
+        Span::styled(
+            if topics.is_empty() {
+                "-".to_string()
+            } else {
+                topics.join(", ")
+            },
+            Style::default().fg(theme::ACCENT_LIGHT),
+        ),
+    ]));
 
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let cur = *app.rate.last().unwrap_or(&0);
-    let peak = app.rate.iter().copied().max().unwrap_or(0);
-    let rows = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).split(inner);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("  now ", Style::default().fg(theme::TEXT_MUTED)),
-            Span::styled(
-                fmt_count(cur as i64),
-                Style::default()
-                    .fg(theme::SUCCESS)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("   peak ", Style::default().fg(theme::TEXT_MUTED)),
-            Span::styled(fmt_count(peak as i64), Style::default().fg(theme::ACCENT)),
-            Span::styled("   events/s", Style::default().fg(theme::SEPARATOR)),
-        ])),
-        rows[0],
-    );
-    frame.render_widget(
-        Sparkline::default()
-            .data(&app.rate)
-            .style(Style::default().fg(theme::ACCENT_LIGHT)),
-        rows[1],
-    );
-}
-
-/// Bottom-left flip pane: Detail (front) ⟷ Config (back), with the
-/// horizontal-squish card-flip animation driven by `app.flip` (FlipState).
-/// Renders the narrowing manually so the face closures can read
-/// `app` immutably while the state ticks in `App::tick`.
-fn render_flip_pane(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
-    let render_face = |frame: &mut Frame, r: Rect| {
-        if app.flip.showing_back() {
-            render_config(frame, r, app, focused);
-        } else {
-            render_detail(frame, r, app, focused);
-        }
-    };
-
-    if !app.flip.is_animating() {
-        render_face(frame, area);
-        return;
-    }
-
-    // Repaint the app bg over the whole slot (erasing the wider previous face)
-    // rather than Clear, which would drop back to the terminal's default bg.
-    frame.render_widget(
-        Block::default().style(Style::default().bg(theme::APP_BG)),
-        area,
-    );
-    let narrow = narrowed_rect(area, app.flip.width_ratio());
-    if narrow.width >= 24 {
-        render_face(frame, narrow);
+    // Narrow panes drop the "end" column; lag already says how far behind.
+    let inner = area.width.saturating_sub(4) as usize;
+    let wide = inner >= 64;
+    let topic_w = if wide {
+        inner.saturating_sub(10 + 13 + 13 + 10 + 1)
     } else {
-        // Collapsed to a sliver - draw the flip edge (a glowing seam).
-        let buf = frame.buffer_mut();
-        let mid = narrow.x + narrow.width / 2;
-        for y in narrow.y..narrow.y.saturating_add(narrow.height) {
-            if let Some(cell) = buf.cell_mut((mid, y)) {
-                cell.set_symbol("│")
-                    .set_style(Style::default().fg(theme::ACCENT_LIGHT));
+        inner.saturating_sub(6 + 12 + 10 + 1)
+    }
+    .max(10);
+    lines.push(Line::from(""));
+    lines.push(heading(&if wide {
+        format!(
+            "{:<topic_w$}{:>10}{:>13}{:>13}{:>10}",
+            "TOPIC", "partition", "committed", "end", "lag"
+        )
+    } else {
+        format!(
+            "{:<topic_w$}{:>6}{:>12}{:>10}",
+            "TOPIC", "part", "committed", "lag"
+        )
+    }));
+    match app.lags.get(&g.name) {
+        None => lines.push(loading_line(app, "loading offsets…")),
+        Some(parts) if parts.is_empty() => lines.push(Line::from(Span::styled(
+            "  no committed offsets yet",
+            muted,
+        ))),
+        Some(parts) => {
+            let mut parts: Vec<_> = parts.iter().collect();
+            parts.sort_by(|a, b| {
+                b.lag()
+                    .cmp(&a.lag())
+                    .then(a.topic.cmp(&b.topic))
+                    .then(a.partition.cmp(&b.partition))
+            });
+            for p in parts {
+                let topic = Span::styled(
+                    format!("  {:<topic_w$}", truncate(&p.topic, topic_w)),
+                    Style::default().fg(theme::TEXT),
+                );
+                lines.push(Line::from(if wide {
+                    vec![
+                        topic,
+                        Span::styled(format!("{:>10}", p.partition), muted),
+                        Span::styled(format!("{:>13}", fmt_count(p.committed)), muted),
+                        Span::styled(format!("{:>13}", fmt_count(p.end)), muted),
+                        lag_span(Some(p.lag()), 10),
+                    ]
+                } else {
+                    vec![
+                        topic,
+                        Span::styled(format!("{:>6}", p.partition), muted),
+                        Span::styled(format!("{:>12}", fmt_count(p.committed)), muted),
+                        lag_span(Some(p.lag()), 10),
+                    ]
+                }));
             }
         }
     }
-}
-
-/// Centre-shrink `area` to `ratio` of its width (for the flip animation).
-fn narrowed_rect(area: Rect, ratio: f32) -> Rect {
-    let w = ((area.width as f32) * ratio).max(1.0) as u16;
-    let w = w.min(area.width);
-    let x = area.x + area.width.saturating_sub(w) / 2;
-    Rect::new(x, area.y, w, area.height)
-}
-
-/// Activity/debug log panel - global by nature. Tails newest at
-/// the bottom; ↑↓ scrolls back when focused.
-fn render_logs(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
-    let inner_h = area.height.saturating_sub(2) as usize;
-    let total = app.logs.len();
-    let end = total.saturating_sub(app.logs_scroll as usize);
-    let start = end.saturating_sub(inner_h);
-
-    let lines: Vec<Line> = if total == 0 {
-        vec![Line::from(Span::styled(
-            "  no activity yet",
-            Style::default().fg(theme::TEXT_MUTED),
-        ))]
-    } else {
-        app.logs[start..end]
-            .iter()
-            .map(|l| {
-                Line::from(Span::styled(
-                    format!("  {l}"),
-                    Style::default().fg(theme::TEXT_MUTED),
-                ))
-            })
-            .collect()
-    };
-    let title = if app.logs_scroll > 0 {
-        format!("Logs · ↑{}", app.logs_scroll)
-    } else {
-        "Logs".to_string()
-    };
-    frame.render_widget(Paragraph::new(lines).block(panel(&title, focused)), area);
-}
-
-/// Full-screen cluster-wide consumer groups (reached with `G`).
-fn render_groups_screen(frame: &mut Frame, app: &mut App) {
-    let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Min(1),
-        Constraint::Length(1),
-    ])
-    .split(frame.area());
-    render_header(frame, rows[0], app);
-    render_groups(frame, rows[1], app, true);
-    footer(
-        frame,
-        rows[2],
-        Some("GROUPS"),
-        &[
-            ("↑↓", "move"),
-            ("d", "delete"),
-            ("x", "actions"),
-            ("esc", "back"),
-            ("?", "help"),
-        ],
-        &app.status,
+    let title = truncate(&g.name, area.width.saturating_sub(6) as usize);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(panel(&title, false))
+            .wrap(Wrap { trim: false })
+            .scroll((app.detail_scroll, 0)),
+        area,
     );
+}
+
+/// Text sparkline of the last `n` samples (one line, no widget needed).
+fn spark(v: &[u64], n: usize) -> String {
+    const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let tail = &v[v.len().saturating_sub(n)..];
+    let max = tail.iter().copied().max().unwrap_or(0).max(1);
+    tail.iter()
+        .map(|&x| BARS[((x * 7) / max) as usize])
+        .collect()
+}
+
+/// "604800000" (ms) → "7d"; "-1" → "forever".
+fn human_ms(v: &str) -> String {
+    let Ok(ms) = v.parse::<i64>() else {
+        return v.to_string();
+    };
+    if ms < 0 {
+        return "forever".into();
+    }
+    let s = ms / 1000;
+    match s {
+        _ if s >= 86_400 && s % 86_400 == 0 => format!("{}d", s / 86_400),
+        _ if s >= 3_600 && s % 3_600 == 0 => format!("{}h", s / 3_600),
+        _ if s >= 60 && s % 60 == 0 => format!("{}m", s / 60),
+        _ if ms % 1000 == 0 => format!("{s}s"),
+        _ => format!("{ms}ms"),
+    }
+}
+
+/// "1048588" → "1.0 MiB"; "-1" → "unlimited".
+fn human_bytes(v: &str) -> String {
+    let Ok(b) = v.parse::<i64>() else {
+        return v.to_string();
+    };
+    if b < 0 {
+        return "unlimited".into();
+    }
+    let units = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let mut x = b as f64;
+    let mut u = 0;
+    while x >= 1024.0 && u < units.len() - 1 {
+        x /= 1024.0;
+        u += 1;
+    }
+    if u == 0 {
+        format!("{b} B")
+    } else {
+        format!("{x:.1} {}", units[u])
+    }
 }
 
 // ── Modals ───────────────────────────────────────────────────────────────
@@ -980,36 +1009,32 @@ fn render_modal(frame: &mut Frame, app: &App) {
             };
             popup(
                 frame,
-                "Shortcuts",
+                "Keys",
                 vec![
                     Line::from(""),
-                    head("Environments"),
-                    row("1–9", "switch to that environment"),
-                    row("e", "open environment picker"),
-                    Line::from(""),
-                    head("Panes"),
-                    row("⇥ / h l", "focus: Topics · Graph · Detail · Logs"),
-                    row("f", "flip bottom-left: Detail ⟷ Config"),
-                    row("z", "zoom the focused pane"),
-                    row("g", "jump to top of a list"),
+                    head("Everywhere"),
+                    row("⇥", "switch Topics ⟷ Consumer groups"),
+                    row("↑↓ j k", "move · g / End top / bottom"),
+                    row("PgUp PgDn", "scroll the detail on the right"),
+                    row("/", "filter the list · esc clears"),
+                    row("r", "refresh from the cluster"),
+                    row("1–9 · e", "switch environment · picker"),
+                    row("x", "all actions for this view"),
+                    row("L", "activity log"),
                     Line::from(""),
                     head("Topics"),
-                    row("↑↓ / j k", "move · detail follows the selection"),
-                    row("/", "filter topics"),
-                    row("w", "event counts + live graph"),
-                    row("p", "peek events (y copy payload · Y copy key)"),
-                    row("y", "copy topic name to clipboard"),
-                    row("c / a / d", "create / add partitions / delete"),
+                    row("↵ / m", "latest messages (r reload · y copy)"),
+                    row("c a d", "create · add partitions · delete"),
+                    row("y", "copy topic name"),
                     Line::from(""),
-                    head("Cluster"),
-                    row("G", "consumer groups (full screen)"),
-                    row("r", "refresh"),
+                    head("Consumer groups"),
+                    row("↵", "open the topic the group reads"),
+                    row("d · y", "delete group · copy name"),
                     Line::from(""),
-                    head("General"),
-                    row("? / esc", "close this help  ·  q  quit"),
+                    row("q · ctrl-c", "quit"),
                 ],
                 theme::ACCENT,
-                27,
+                25,
             );
         }
         Modal::Error(msg) => {
@@ -1186,10 +1211,34 @@ fn render_modal(frame: &mut Frame, app: &App) {
             popup(frame, &format!("Delete {noun}"), lines, theme::ERROR, h);
         }
         Modal::Peek {
+            topic,
             records,
             sel,
             scroll,
-        } => render_peek(frame, records, *sel, *scroll),
+        } => render_peek(frame, topic, records, *sel, *scroll),
+        Modal::Logs(back) => {
+            let a = frame.area();
+            let h = (a.height * 80 / 100).max(8);
+            let inner_h = h.saturating_sub(4) as usize;
+            let end = app.logs.len().saturating_sub(*back as usize);
+            let start = end.saturating_sub(inner_h);
+            let mut lines: Vec<Line> = app.logs[start..end]
+                .iter()
+                .map(|l| Line::from(Span::styled(l.clone(), Style::default().fg(theme::TEXT))))
+                .collect();
+            if lines.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "no activity yet",
+                    Style::default().fg(theme::TEXT_MUTED),
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "↑↓ / PgUp PgDn scroll · any other key closes",
+                Style::default().fg(theme::TEXT_MUTED),
+            )));
+            popup(frame, "Activity log", lines, theme::ACCENT, h);
+        }
         Modal::Actions { items, sel } => {
             let mut lines = vec![Line::from("")];
             for (i, (k, label)) in items.iter().enumerate() {
@@ -1226,7 +1275,13 @@ fn render_modal(frame: &mut Frame, app: &App) {
 
 /// Interactive event browser: event list (top) + full pretty-printed payload of
 /// the selected event (bottom). y copies the payload, Y the key.
-fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: usize, scroll: u16) {
+fn render_peek(
+    frame: &mut Frame,
+    topic: &str,
+    records: &[crate::kafka::EventRecord],
+    sel: usize,
+    scroll: u16,
+) {
     let a = frame.area();
     let w = (a.width * 85 / 100).clamp(50, 130);
     let h = (a.height * 85 / 100).clamp(12, 44);
@@ -1238,13 +1293,14 @@ fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: us
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(theme::ACCENT))
         .title(Span::styled(
-            format!(
-                " Peek · {} events   ↑↓ select · PgDn/PgUp scroll · y copy payload · Y copy key · esc close ",
-                records.len()
-            ),
+            format!(" {topic} · {} newest messages ", records.len()),
             Style::default()
                 .fg(theme::ACCENT)
                 .add_modifier(Modifier::BOLD),
+        ))
+        .title_bottom(Span::styled(
+            " ↑↓ select · PgUp/PgDn scroll payload · y copy · Y copy key · r reload · esc close ",
+            Style::default().fg(theme::TEXT_MUTED),
         ))
         .style(Style::default().bg(theme::PANEL_BG));
     let inner = outer.inner(area);
@@ -1252,7 +1308,7 @@ fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: us
 
     if records.is_empty() {
         frame.render_widget(
-            Paragraph::new("  no events in this topic")
+            Paragraph::new("  no messages in this topic yet")
                 .style(Style::default().fg(theme::TEXT_MUTED)),
             inner,
         );
@@ -1283,15 +1339,26 @@ fn render_peek(frame: &mut Frame, records: &[crate::kafka::EventRecord], sel: us
                 base.fg(theme::ACCENT_LIGHT),
             ),
             Span::styled(
-                format!("p{:<2} @{:<10} ", r.partition, r.offset),
+                format!(
+                    "{}  ",
+                    r.timestamp
+                        .map_or_else(|| "--:--:--".into(), |t| crate::app::local_time(t, false))
+                ),
+                base.fg(theme::TEXT_MUTED),
+            ),
+            Span::styled(
+                format!("{:<12}", format!("p{} @{}", r.partition, r.offset)),
                 base.fg(theme::ACCENT),
             ),
             Span::styled(
-                format!("{:<20}", truncate(&r.key, 18)),
+                format!(
+                    "{:<18}",
+                    truncate(if r.key.is_empty() { "∅" } else { &r.key }, 16)
+                ),
                 base.fg(theme::WARNING),
             ),
             Span::styled(
-                truncate(&r.payload, (parts[0].width as usize).saturating_sub(40)),
+                truncate(&r.payload, (parts[0].width as usize).saturating_sub(45)),
                 base.fg(theme::TEXT),
             ),
         ]));
@@ -1372,10 +1439,19 @@ fn popup_width(a: Rect) -> u16 {
     (a.width * 7 / 10).clamp(40, 96)
 }
 
+/// Centered modal. Height grows to fit the wrapped content (`rows` is a
+/// minimum), so a long name never pushes the key hints out of view.
 fn popup(frame: &mut Frame, title: &str, lines: Vec<Line>, accent: Color, rows: u16) {
     let a = frame.area();
     let w = popup_width(a);
-    let h = rows.min(a.height.saturating_sub(2)).max(5);
+    // inner width = borders 2 + padding 2
+    let wrapped = Paragraph::new(lines.clone())
+        .wrap(Wrap { trim: false })
+        .line_count(w.saturating_sub(4)) as u16;
+    let h = (wrapped + 2)
+        .max(rows)
+        .min(a.height.saturating_sub(2))
+        .max(5);
     let area = centered_fixed(w, h, a);
     frame.render_widget(Clear, area);
     let b = Block::default()
@@ -1449,7 +1525,7 @@ fn fmt_count(n: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{App, Modal, Panel, Screen};
+    use crate::app::{App, Modal, Screen};
     use crate::config::{Config, EnvProfile};
     use crate::kafka::{EventRecord, PartMeta, PartitionInfo, TopicDetail, TopicMeta};
     use ratatui::backend::TestBackend;
@@ -1527,7 +1603,6 @@ mod tests {
                 ("compression.type".into(), "producer".into()),
             ],
         ));
-        app.rate_topic = Some("service.events.v2".into());
         app.rate = vec![
             12, 40, 33, 58, 71, 49, 88, 64, 95, 120, 77, 60, 44, 90, 110, 130, 85, 52,
         ];
@@ -1543,14 +1618,18 @@ mod tests {
     fn render_dashboard_smoke() {
         let mut app = demo_app();
         app.screen = Screen::Main;
-        app.focus = Panel::Topics;
-        println!("\n===== DASHBOARD (Detail + Logs, 108x26) =====");
-        println!("{}", dump(&mut app, 108, 26));
-        assert!(dump(&mut app, 108, 26).contains("service.events"));
-
-        app.flip.set_showing_back(true);
-        println!("\n===== FLIPPED (bottom-left → Config) =====");
-        println!("{}", dump(&mut app, 108, 20));
+        let out = dump(&mut app, 120, 30);
+        println!("\n===== TOPICS (120x30) =====\n{out}");
+        for want in [
+            "Topics 12",
+            "messages",
+            "retention 7d",
+            "CONSUMER GROUPS",
+            "billing-consumer",
+            "PARTITION",
+        ] {
+            assert!(out.contains(want), "missing {want:?}");
+        }
     }
 
     #[test]
@@ -1572,7 +1651,7 @@ mod tests {
         println!("{}", dump(&mut app, 100, 24));
 
         app.modal = Modal::None;
-        app.screen = Screen::Groups;
+        app.view = crate::app::View::Groups;
         app.groups = vec![
             crate::kafka::GroupSummary {
                 name: "billing-consumer".into(),
@@ -1591,8 +1670,21 @@ mod tests {
         ];
         app.groups_loaded = true;
         app.group_state.select(Some(0));
-        println!("\n===== GROUPS SCREEN (G) =====");
-        println!("{}", dump(&mut app, 100, 24));
+        app.lags.insert(
+            "billing-consumer".into(),
+            vec![crate::kafka::PartitionLag {
+                topic: "service.events.v2".into(),
+                partition: 3,
+                committed: 900,
+                end: 1200,
+            }],
+        );
+        let out = dump(&mut app, 120, 24);
+        println!("\n===== GROUPS VIEW =====\n{out}");
+        assert!(
+            out.contains("300") && out.contains("committed"),
+            "lag not shown"
+        );
     }
 
     #[test]
@@ -1618,6 +1710,7 @@ mod tests {
         let mut app = demo_app();
         app.screen = Screen::Main;
         app.modal = Modal::Peek {
+            topic: "service.events.v2".into(),
             scroll: 0,
             records: vec![
                 EventRecord {
