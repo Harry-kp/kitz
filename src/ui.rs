@@ -544,8 +544,11 @@ fn render_topic_detail(frame: &mut Frame, area: Rect, app: &App) {
         .add_modifier(Modifier::BOLD);
 
     // ── Headline numbers ──
+    // While offsets load, show the last count we saw for this topic, if any.
     let messages = if d.watermarks_loaded {
         Span::styled(fmt_count(d.total_messages()), strong)
+    } else if let Some(c) = app.counts.get(&d.name) {
+        Span::styled(fmt_count(*c), strong)
     } else {
         Span::styled(
             format!("{} ", spinner(app)),
@@ -1816,5 +1819,18 @@ mod tests {
             pos("id") < pos("amount") && pos("amount") < pos("currency"),
             "{out}"
         );
+    }
+
+    #[test]
+    fn filtering_keeps_the_selection_while_it_still_matches() {
+        let mut app = demo_app();
+        app.screen = Screen::Main;
+        // demo_app selects service.events.v2
+        press(&mut app, "/");
+        assert_eq!(app.detail.as_ref().unwrap().name, "service.events.v2");
+        press(&mut app, "v2");
+        assert_eq!(app.detail.as_ref().unwrap().name, "service.events.v2");
+        press(&mut app, "x"); // no match left
+        assert!(app.detail.is_none());
     }
 }

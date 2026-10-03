@@ -677,17 +677,30 @@ impl App {
         }
     }
 
-    /// Re-select the first match after the filter text changes.
-    fn filter_changed(&mut self) {
+    /// Change the filter text, keeping the selection on the same item while
+    /// it still matches (else the first match).
+    fn edit_filter(&mut self, edit: impl FnOnce(&mut String)) {
         match self.view {
             View::Topics => {
-                let n = self.filtered_topics().len();
-                self.topic_state.select((n > 0).then_some(0));
+                let prev = self.selected_topic_name();
+                edit(&mut self.filter);
+                let visible = self.filtered_topics();
+                let i = visible
+                    .iter()
+                    .position(|&m| Some(&self.meta[m].name) == prev.as_ref());
+                self.topic_state
+                    .select(i.or((!visible.is_empty()).then_some(0)));
                 self.rebuild_detail();
             }
             View::Groups => {
-                let n = self.filtered_groups().len();
-                self.group_state.select((n > 0).then_some(0));
+                let prev = self.selected_group().map(|g| g.name.clone());
+                edit(&mut self.filter);
+                let visible = self.filtered_groups();
+                let i = visible
+                    .iter()
+                    .position(|&g| Some(&self.groups[g].name) == prev.as_ref());
+                self.group_state
+                    .select(i.or((!visible.is_empty()).then_some(0)));
             }
         }
     }
@@ -724,8 +737,7 @@ impl App {
             match key.code {
                 Esc => {
                     self.filtering = false;
-                    self.filter.clear();
-                    self.filter_changed();
+                    self.edit_filter(String::clear);
                 }
                 Enter | Down | Up => {
                     self.filtering = false;
@@ -734,14 +746,10 @@ impl App {
                         self.nav(if key.code == Down { 1 } else { -1 });
                     }
                 }
-                Backspace => {
-                    self.filter.pop();
-                    self.filter_changed();
-                }
-                Char(c) => {
-                    self.filter.push(c);
-                    self.filter_changed();
-                }
+                Backspace => self.edit_filter(|f| {
+                    f.pop();
+                }),
+                Char(c) => self.edit_filter(|f| f.push(c)),
                 _ => {}
             }
             return Ok(());
@@ -795,13 +803,9 @@ impl App {
 
             (_, Char('/')) => {
                 self.filtering = true;
-                self.filter.clear();
-                self.filter_changed();
+                self.edit_filter(String::clear);
             }
-            (_, Esc) if !self.filter.is_empty() => {
-                self.filter.clear();
-                self.filter_changed();
-            }
+            (_, Esc) if !self.filter.is_empty() => self.edit_filter(String::clear),
             (_, Char('r')) => self.refresh(),
             (_, Char('e')) => {
                 self.env_state
@@ -1221,25 +1225,51 @@ pub fn local_time(epoch_ms: i64, date: bool) -> String {
     }
 }
 
-/// macOS clipboard via `pbcopy` (kitz is macOS-only for now; add
-/// wl-copy/xclip here when Linux builds land).
+/// Clipboard: `pbcopy` on macOS; elsewhere the OSC 52 terminal escape, which
+/// also works over SSH (iTerm2, kitty, WezTerm, Windows Terminal, tmux with
+/// `set-clipboard on`) - the usual way kitz is run on a bastion.
 fn copy_to_clipboard(text: &str) -> std::result::Result<(), String> {
     use std::io::Write;
-    let mut child = std::process::Command::new("pbcopy")
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("pbcopy: {e}"))?;
-    child
-        .stdin
-        .take()
-        .ok_or("pbcopy: no stdin")?
-        .write_all(text.as_bytes())
-        .map_err(|e| e.to_string())?;
-    match child.wait() {
-        Ok(s) if s.success() => Ok(()),
-        Ok(s) => Err(format!("pbcopy exited with {s}")),
-        Err(e) => Err(e.to_string()),
+    if cfg!(target_os = "macos") {
+        let mut child = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("pbcopy: {e}"))?;
+        child
+            .stdin
+            .take()
+            .ok_or("pbcopy: no stdin")?
+            .write_all(text.as_bytes())
+            .map_err(|e| e.to_string())?;
+        return match child.wait() {
+            Ok(s) if s.success() => Ok(()),
+            Ok(s) => Err(format!("pbcopy exited with {s}")),
+            Err(e) => Err(e.to_string()),
+        };
     }
+    let mut out = std::io::stdout();
+    write!(out, "\x1b]52;c;{}\x07", base64(text.as_bytes()))
+        .and_then(|()| out.flush())
+        .map_err(|e| e.to_string())
+}
+
+/// Standard base64 (for OSC 52); std has none and it's 15 lines.
+fn base64(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for c in bytes.chunks(3) {
+        let n = (c[0] as u32) << 16
+            | (*c.get(1).unwrap_or(&0) as u32) << 8
+            | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            s.push(if i <= c.len() {
+                T[(n >> (18 - 6 * i) & 63) as usize] as char
+            } else {
+                '='
+            });
+        }
+    }
+    s
 }
 
 // crossterm's KeyCode::Tab collides with our `Tab_` usage in match arms after
@@ -1248,6 +1278,19 @@ use ratatui::crossterm::event::KeyCode::Tab as Tab_;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn base64_matches_rfc4648_vectors() {
+        for (i, o) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+        ] {
+            assert_eq!(super::base64(i.as_bytes()), o);
+        }
+    }
+
     #[test]
     fn local_time_formats_epoch_ms() {
         let s = super::local_time(1_791_020_372_134, true);
