@@ -6,7 +6,6 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -32,6 +31,9 @@ pub struct PartMeta {
     pub id: i32,
     pub replicas: usize,
     pub isr: usize,
+    /// Offsets: -1 until watermarks are loaded (only for the selected topic).
+    pub low: i64,
+    pub high: i64,
 }
 
 #[derive(Clone)]
@@ -40,18 +42,9 @@ pub struct TopicMeta {
     pub partitions: Vec<PartMeta>,
 }
 
-pub struct PartitionInfo {
-    pub id: i32,
-    pub replicas: usize,
-    pub isr: usize,
-    /// -1 until watermarks are loaded on demand.
-    pub low: i64,
-    pub high: i64,
-}
-
 pub struct TopicDetail {
     pub name: String,
-    pub partitions: Vec<PartitionInfo>,
+    pub partitions: Vec<PartMeta>,
     /// False until `load_watermarks` fills low/high + event counts.
     pub watermarks_loaded: bool,
 }
@@ -167,8 +160,7 @@ impl KafkaClient {
             .create_with_context(ctx.clone())
             .context("creating admin client")?;
 
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
+        let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .context("building admin runtime")?;
@@ -521,6 +513,8 @@ fn fetch_meta(consumer: &BaseConsumer<MskContext>) -> Result<(Vec<TopicMeta>, us
                     id: p.id(),
                     replicas: p.replicas().len(),
                     isr: p.isr().len(),
+                    low: -1,
+                    high: -1,
                 })
                 .collect();
             partitions.sort_by_key(|p| p.id);
@@ -582,18 +576,14 @@ fn ca_bundle() -> Option<String> {
         .map(|s| (*s).to_string())
 }
 
-fn log_path() -> Option<PathBuf> {
-    let dir = dirs::cache_dir()?.join("kitz");
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join("kitz.log"))
-}
-
 /// `~/Library/Caches/kitz/kitz.log` (or the OS cache dir), opened for append.
 pub fn open_log_file() -> Option<File> {
+    let dir = dirs::cache_dir()?.join("kitz");
+    std::fs::create_dir_all(&dir).ok()?;
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(log_path()?)
+        .open(dir.join("kitz.log"))
         .ok()
 }
 

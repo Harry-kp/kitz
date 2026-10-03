@@ -135,18 +135,8 @@ fn spinner(app: &App) -> &'static str {
     SPINNER[((ms / 120) % 4) as usize]
 }
 
-fn footer(frame: &mut Frame, area: Rect, lead: Option<&str>, hints: &[(&str, &str)], status: &str) {
+fn footer(frame: &mut Frame, area: Rect, hints: &[(&str, &str)], status: &str) {
     let mut spans = vec![Span::raw(" ")];
-    if let Some(l) = lead {
-        spans.push(Span::styled(
-            format!(" {l} "),
-            Style::default()
-                .bg(theme::ACCENT)
-                .fg(theme::PANEL_BG)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::raw("  "));
-    }
     for (k, d) in hints {
         spans.push(Span::styled(
             *k,
@@ -279,7 +269,6 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
     footer(
         frame,
         Rect::new(fa.x, fa.bottom() - 1, fa.width, 1),
-        None,
         if app.connected.is_some() {
             &[
                 ("↑↓", "select"),
@@ -380,7 +369,7 @@ fn render_main(frame: &mut Frame, app: &mut App) {
             ("?", "help"),
         ],
     };
-    footer(frame, foot, None, hints, &app.status);
+    footer(frame, foot, hints, &app.status);
 }
 
 /// Tabs on the left, environments on the right (active one filled; prod red).
@@ -1527,7 +1516,7 @@ mod tests {
     use super::*;
     use crate::app::{App, Modal, Screen};
     use crate::config::{Config, EnvProfile};
-    use crate::kafka::{EventRecord, PartMeta, PartitionInfo, TopicDetail, TopicMeta};
+    use crate::kafka::{EventRecord, PartMeta, TopicDetail, TopicMeta};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
@@ -1556,6 +1545,8 @@ mod tests {
                         id,
                         replicas: 3,
                         isr: 3,
+                        low: -1,
+                        high: -1,
                     })
                     .collect(),
             })
@@ -1564,7 +1555,7 @@ mod tests {
         app.detail = Some(TopicDetail {
             name: "service.events.v2".into(),
             partitions: (0..4)
-                .map(|id| PartitionInfo {
+                .map(|id| PartMeta {
                     id,
                     replicas: 3,
                     isr: 3,
@@ -1751,7 +1742,7 @@ mod tests {
 
     #[test]
     fn ctrl_c_quits_even_while_filtering() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         let mut app = demo_app();
         app.screen = Screen::Main;
         app.on_key(KeyEvent::from(KeyCode::Char('/'))).unwrap();
@@ -1763,7 +1754,7 @@ mod tests {
     }
 
     fn press(app: &mut App, keys: &str) {
-        use crossterm::event::{KeyCode, KeyEvent};
+        use ratatui::crossterm::event::{KeyCode, KeyEvent};
         for c in keys.chars() {
             let code = match c {
                 '\n' => KeyCode::Enter,

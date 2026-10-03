@@ -23,14 +23,12 @@ exclude = [".github/", "kitz.toml", "*.png", "docs/"]
 rdkafka = { version = "0.36", features = ["cmake-build", "ssl-vendored", "sasl"] }
 
 # AWS MSK IAM auth - the wedge. Generates the SigV4 SASL token.
-aws-config = "1"
 aws-types = "1"
 aws-msk-iam-sasl-signer = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt"] }
 
 # TUI (palette borrowed from vortix)
 ratatui = { version = "0.29", features = ["unstable-rendered-line-info"] }  # Paragraph::line_count sizes the error modal
-crossterm = "0.28"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -41,7 +39,6 @@ serde_json = { version = "1", features = ["preserve_order"] }  # pretty-print pa
 toml = "0.8"
 anyhow = "1"
 dirs = "5"
-arboard = "3"      # copy payloads/keys to the system clipboard
 libc = "0.2"       # dup2: keep librdkafka stderr logs off the TUI
 
 # The profile cargo-dist builds release binaries with.

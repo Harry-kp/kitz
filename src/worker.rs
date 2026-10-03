@@ -113,12 +113,12 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                 Err(e) => send(evt, Evt::ConnectFailed(connect_error(&e, &profile))),
             },
 
-            Cmd::RefreshTopics => with_client_mut(&mut client, evt, |c| {
+            Cmd::RefreshTopics => with_client(&mut client, evt, |c| {
                 c.reload_meta()?;
                 Ok(Evt::Topics(c.metadata()))
             }),
 
-            Cmd::Watermarks(topic) => with_client(&client, evt, |c| {
+            Cmd::Watermarks(topic) => with_client(&mut client, evt, |c| {
                 let marks = c.watermarks(&topic)?;
                 Ok(Evt::Watermarks { topic, marks })
             }),
@@ -134,7 +134,7 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                 }
             }
 
-            Cmd::Groups => with_client(&client, evt, |c| Ok(Evt::Groups(c.consumer_groups()?))),
+            Cmd::Groups => with_client(&mut client, evt, |c| Ok(Evt::Groups(c.consumer_groups()?))),
 
             // Lag failures (e.g. no Describe ACL on one group) just mean "no
             // data" for that group - reported as empty, not as an error toast.
@@ -145,7 +145,7 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                 }
             }
 
-            Cmd::Peek(topic) => with_client(&client, evt, |c| {
+            Cmd::Peek(topic) => with_client(&mut client, evt, |c| {
                 let records = c.peek(&topic, 50)?;
                 Ok(Evt::Peek { topic, records })
             }),
@@ -169,7 +169,7 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                 |c| c.add_partitions(&name, total),
             ),
 
-            Cmd::DeleteGroup(name) => with_client(&client, evt, |c| {
+            Cmd::DeleteGroup(name) => with_client(&mut client, evt, |c| {
                 c.delete_group(&name)?;
                 // Re-list groups so the view reflects the deletion.
                 send(evt, Evt::Ok(format!("deleted group {name}")));
@@ -216,20 +216,6 @@ fn send(evt: &Sender<Evt>, e: Evt) {
 }
 
 fn with_client(
-    client: &Option<KafkaClient>,
-    evt: &Sender<Evt>,
-    f: impl FnOnce(&KafkaClient) -> anyhow::Result<Evt>,
-) {
-    let Some(c) = client else {
-        return send(evt, Evt::Failed("not connected".into()));
-    };
-    match f(c) {
-        Ok(e) => send(evt, e),
-        Err(e) => send(evt, Evt::Failed(err_text(&e))),
-    }
-}
-
-fn with_client_mut(
     client: &mut Option<KafkaClient>,
     evt: &Sender<Evt>,
     f: impl FnOnce(&mut KafkaClient) -> anyhow::Result<Evt>,

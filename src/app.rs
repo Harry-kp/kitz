@@ -14,9 +14,7 @@ use anyhow::Result;
 use ratatui::widgets::{ListState, TableState};
 
 use crate::config::{Config, EnvProfile};
-use crate::kafka::{
-    EventRecord, GroupSummary, PartitionInfo, PartitionLag, TopicDetail, TopicMeta,
-};
+use crate::kafka::{EventRecord, GroupSummary, PartitionLag, TopicDetail, TopicMeta};
 use crate::worker::{Cmd, Evt, Worker};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -153,7 +151,6 @@ pub struct App {
 
     /// Config of the currently selected topic: (topic, [(key,value)]).
     pub topic_config: Option<(String, Vec<(String, String)>)>,
-    pub loading_config: bool,
 
     /// Messages/second for the selected topic, one sample per poll.
     pub rate: Vec<u64>,
@@ -205,7 +202,6 @@ impl App {
             last_poll: Instant::now(),
             counts: HashMap::new(),
             topic_config: None,
-            loading_config: false,
             rate: Vec::new(),
             rate_last: None,
             groups: Vec::new(),
@@ -466,7 +462,6 @@ impl App {
                 self.next_lag();
             }
             Evt::TopicConfig { topic, entries } => {
-                self.loading_config = false;
                 // Keep only if it's still the selected topic.
                 if self
                     .detail
@@ -543,21 +538,10 @@ impl App {
         self.rate.clear();
         self.detail = Some(TopicDetail {
             name: name.clone(),
-            partitions: t
-                .partitions
-                .iter()
-                .map(|p| PartitionInfo {
-                    id: p.id,
-                    replicas: p.replicas,
-                    isr: p.isr,
-                    low: -1,
-                    high: -1,
-                })
-                .collect(),
+            partitions: t.partitions.clone(),
             watermarks_loaded: false,
         });
         self.topic_config = None;
-        self.loading_config = true;
         self.worker.send(Cmd::TopicConfig(name));
     }
 
@@ -710,15 +694,15 @@ impl App {
 
     // ── Input ──────────────────────────────────────────────────────────
 
-    pub fn on_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
-        use crossterm::event::KeyCode::*;
+    pub fn on_key(&mut self, key: ratatui::crossterm::event::KeyEvent) -> Result<()> {
+        use ratatui::crossterm::event::KeyCode::*;
 
         // Ctrl-C always quits: raw mode swallows SIGINT, and in the filter it
         // would otherwise type a 'c'.
         if key.code == Char('c')
             && key
                 .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL)
+                .contains(ratatui::crossterm::event::KeyModifiers::CONTROL)
         {
             self.should_quit = true;
             return Ok(());
@@ -946,8 +930,8 @@ impl App {
         self.modal = Modal::Actions { items, sel: 0 };
     }
 
-    fn on_modal_key(&mut self, key: crossterm::event::KeyEvent) {
-        use crossterm::event::KeyCode::*;
+    fn on_modal_key(&mut self, key: ratatui::crossterm::event::KeyEvent) {
+        use ratatui::crossterm::event::KeyCode::*;
 
         let modal = std::mem::replace(&mut self.modal, Modal::None);
         match modal {
@@ -1099,7 +1083,7 @@ impl App {
     /// Re-dispatch a character as if the user typed it (used by the action
     /// menu so menu items and hotkeys share one code path).
     fn run_key(&mut self, c: char) {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         let _ = self.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::empty()));
     }
 
@@ -1237,14 +1221,30 @@ pub fn local_time(epoch_ms: i64, date: bool) -> String {
     }
 }
 
+/// macOS clipboard via `pbcopy` (kitz is macOS-only for now; add
+/// wl-copy/xclip here when Linux builds land).
 fn copy_to_clipboard(text: &str) -> std::result::Result<(), String> {
-    let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    cb.set_text(text.to_string()).map_err(|e| e.to_string())
+    use std::io::Write;
+    let mut child = std::process::Command::new("pbcopy")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("pbcopy: {e}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or("pbcopy: no stdin")?
+        .write_all(text.as_bytes())
+        .map_err(|e| e.to_string())?;
+    match child.wait() {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => Err(format!("pbcopy exited with {s}")),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 // crossterm's KeyCode::Tab collides with our `Tab_` usage in match arms after
 // the `use KeyCode::*` glob; alias it. (BackTab comes from the glob.)
-use crossterm::event::KeyCode::Tab as Tab_;
+use ratatui::crossterm::event::KeyCode::Tab as Tab_;
 
 #[cfg(test)]
 mod tests {

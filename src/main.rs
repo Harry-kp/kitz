@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use crossterm::event::{self, Event};
+use ratatui::crossterm::event::{self, Event};
 
 use crate::app::App;
 use crate::config::Config;
