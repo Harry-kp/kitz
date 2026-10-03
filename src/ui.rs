@@ -1028,51 +1028,77 @@ fn render_modal(frame: &mut Frame, app: &App) {
                     Span::styled(format!("{val}{}", if focused { "▌" } else { "" }), vstyle),
                 ])
             };
-            popup(
-                frame,
-                "Create topic",
-                vec![
-                    Line::from(""),
-                    field("name", &f.name, f.focus == 0),
-                    field("partitions", &f.partitions, f.focus == 1),
-                    field("replication", &f.replication, f.focus == 2),
-                    Line::from(""),
-                    Line::from(Span::styled(
-                        "  ⇥ next   ↵ create   esc cancel",
-                        Style::default().fg(theme::TEXT_MUTED),
-                    )),
-                ],
-                theme::ACCENT,
-                9,
-            );
+            let mut lines = vec![
+                Line::from(""),
+                field("name", &f.name, f.focus == 0),
+                field("partitions", &f.partitions, f.focus == 1),
+                field("replication", &f.replication, f.focus == 2),
+            ];
+            push_form_error(&mut lines, &f.error);
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  ⇥ next   ↵ create   esc cancel",
+                Style::default().fg(theme::TEXT_MUTED),
+            )));
+            let h = lines.len() as u16 + 2;
+            popup(frame, "Create topic", lines, theme::ACCENT, h);
         }
-        Modal::AddPartitions(f) => popup(
-            frame,
-            "Add partitions",
-            vec![
+        Modal::AddPartitions(f) => {
+            let input = |val: &str, focused: bool| match (val.is_empty(), focused) {
+                // A whitespace-only line trips ratatui's word-wrapper and drops
+                // the next line, so an empty unfocused field shows a hint.
+                (true, false) => Span::styled("⇥ to type", Style::default().fg(theme::TEXT_MUTED)),
+                _ => Span::styled(
+                    format!("{val}{}", if focused { "▌" } else { "" }),
+                    Style::default()
+                        .fg(theme::ACCENT_LIGHT)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            };
+            let muted = Style::default().fg(theme::TEXT_MUTED);
+            let mut lines = vec![
                 Line::from(""),
                 Line::from(vec![
-                    Span::styled("  topic  ", Style::default().fg(theme::TEXT_MUTED)),
+                    Span::styled("  topic  ", muted),
                     Span::styled(f.topic.clone(), Style::default().fg(theme::ACCENT_LIGHT)),
+                    Span::styled(format!("   (now {} partitions)", f.current), muted),
                 ]),
                 Line::from(vec![
-                    Span::styled("  total  ", Style::default().fg(theme::TEXT_MUTED)),
-                    Span::styled(
-                        format!("{}▌", f.total),
-                        Style::default()
-                            .fg(theme::ACCENT_LIGHT)
-                            .add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled("  total  ", muted),
+                    input(&f.total, f.focus == 0),
                 ]),
-                Line::from(""),
-                Line::from(Span::styled(
-                    "  partitions can only increase   ↵ apply   esc cancel",
-                    Style::default().fg(theme::WARNING),
-                )),
-            ],
-            theme::ACCENT,
-            9,
-        ),
+            ];
+            if f.is_prod {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "  ⚠ PROD - irreversible. Type the topic name to confirm:",
+                    Style::default()
+                        .fg(theme::ERROR)
+                        .add_modifier(Modifier::BOLD),
+                )));
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    input(&f.confirm, f.focus == 1),
+                ]));
+            }
+            push_form_error(&mut lines, &f.error);
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                if f.is_prod {
+                    "  partitions can only increase   ⇥ next   ↵ apply   esc cancel"
+                } else {
+                    "  partitions can only increase   ↵ apply   esc cancel"
+                },
+                Style::default().fg(theme::WARNING),
+            )));
+            let h = lines.len() as u16 + 2;
+            let accent = if f.is_prod {
+                theme::ERROR
+            } else {
+                theme::ACCENT
+            };
+            popup(frame, "Add partitions", lines, accent, h);
+        }
         Modal::Delete(f) => {
             let noun = match f.kind {
                 crate::app::DeleteKind::Topic => "topic",
@@ -1120,6 +1146,7 @@ fn render_modal(frame: &mut Frame, app: &App) {
                     Style::default().fg(theme::WARNING),
                 )));
             }
+            push_form_error(&mut lines, &f.error);
             let h = lines.len() as u16 + 2;
             popup(frame, &format!("Delete {noun}"), lines, theme::ERROR, h);
         }
@@ -1268,6 +1295,19 @@ fn pretty_json(s: &str) -> String {
     serde_json::from_str::<serde_json::Value>(s)
         .and_then(|v| serde_json::to_string_pretty(&v))
         .unwrap_or_else(|_| s.to_string())
+}
+
+/// Inline validation message for a form that stays open.
+fn push_form_error(lines: &mut Vec<Line>, error: &Option<String>) {
+    if let Some(e) = error {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!("  ✗ {e}"),
+            Style::default()
+                .fg(theme::ERROR)
+                .add_modifier(Modifier::BOLD),
+        )));
+    }
 }
 
 fn popup_width(a: Rect) -> u16 {
@@ -1568,5 +1608,60 @@ mod tests {
             .unwrap();
         assert!(app.should_quit);
         assert_eq!(app.filter, "");
+    }
+
+    fn press(app: &mut App, keys: &str) {
+        use crossterm::event::{KeyCode, KeyEvent};
+        for c in keys.chars() {
+            let code = match c {
+                '\n' => KeyCode::Enter,
+                '\t' => KeyCode::Tab,
+                c => KeyCode::Char(c),
+            };
+            app.on_key(KeyEvent::from(code)).unwrap();
+        }
+    }
+
+    #[test]
+    fn prod_mismatch_keeps_dialog_open_so_keys_cannot_reach_dashboard() {
+        let mut app = demo_app();
+        app.screen = Screen::Main;
+        app.connected = Some(env("prod", true));
+        // Wrong confirmation, then keys that would be dashboard actions.
+        press(&mut app, "d\nq");
+        assert!(matches!(app.modal, Modal::Delete(ref f) if f.error.is_some()));
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn prod_add_partitions_needs_typed_name_and_must_increase() {
+        let mut app = demo_app();
+        app.screen = Screen::Main;
+        app.connected = Some(env("prod", true));
+        // service.events.v2 has 5 partitions in demo_app.
+        press(&mut app, "a3\n");
+        assert!(
+            matches!(app.modal, Modal::AddPartitions(ref f) if f.error.as_deref().unwrap().contains("current 5"))
+        );
+        press(&mut app, "\u{8}");
+        let Modal::AddPartitions(f) = &mut app.modal else {
+            panic!()
+        };
+        f.total = "8".into();
+        press(&mut app, "\n");
+        assert!(
+            matches!(app.modal, Modal::AddPartitions(ref f) if f.focus == 1 && f.error.is_some())
+        );
+        press(&mut app, "service.events.v2\n");
+        assert!(matches!(app.modal, Modal::None));
+    }
+
+    #[test]
+    fn create_defaults_replication_to_broker_count() {
+        let mut app = demo_app();
+        app.screen = Screen::Main;
+        app.brokers = 2;
+        press(&mut app, "c");
+        assert!(matches!(app.modal, Modal::Create(ref f) if f.replication == "2"));
     }
 }

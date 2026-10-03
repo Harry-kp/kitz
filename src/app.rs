@@ -89,6 +89,8 @@ pub struct CreateForm {
     pub partitions: String,
     pub replication: String,
     pub focus: usize,
+    /// Validation message shown inside the form (the form stays open).
+    pub error: Option<String>,
 }
 
 pub struct DeleteForm {
@@ -97,12 +99,20 @@ pub struct DeleteForm {
     pub target: String,
     pub confirm: String,
     pub is_prod: bool,
+    pub error: Option<String>,
 }
 
 #[derive(Default)]
 pub struct PartForm {
     pub topic: String,
+    pub current: usize,
     pub total: String,
+    /// Prod only: typed topic name, same guardrail as delete (irreversible).
+    pub is_prod: bool,
+    pub confirm: String,
+    /// 0 = total, 1 = confirm.
+    pub focus: usize,
+    pub error: Option<String>,
 }
 
 pub struct App {
@@ -156,6 +166,8 @@ pub struct App {
     pub modal: Modal,
     pub status: String,
     pub should_quit: bool,
+    /// Brokers in the connected cluster (caps the default replication factor).
+    pub brokers: usize,
 }
 
 impl App {
@@ -196,6 +208,7 @@ impl App {
             modal: Modal::None,
             status: "↑↓ select env · Enter connect · q quit".into(),
             should_quit: false,
+            brokers: 0,
         }
     }
 
@@ -296,7 +309,12 @@ impl App {
 
     fn apply(&mut self, evt: Evt) {
         match evt {
-            Evt::Connected { profile, meta } => {
+            Evt::Connected {
+                profile,
+                meta,
+                brokers,
+            } => {
+                self.brokers = brokers;
                 self.log(format!(
                     "connected to {} · {} topics",
                     profile.name,
@@ -745,7 +763,9 @@ impl App {
             (Screen::Main, Char('c')) => {
                 self.modal = Modal::Create(CreateForm {
                     partitions: "1".into(),
-                    replication: "3".into(),
+                    // 3 is the usual default, but it fails outright on smaller
+                    // clusters (MSK stag is often 2 brokers).
+                    replication: self.brokers.clamp(1, 3).to_string(),
                     ..Default::default()
                 });
             }
@@ -785,6 +805,7 @@ impl App {
                 target: topic,
                 confirm: String::new(),
                 is_prod: self.is_prod(),
+                error: None,
             });
         }
     }
@@ -799,15 +820,26 @@ impl App {
                 target: g.name.clone(),
                 confirm: String::new(),
                 is_prod: self.is_prod(),
+                error: None,
             });
         }
     }
 
     fn open_add_partitions(&mut self) {
         if let Some(topic) = self.selected_topic_name() {
+            let current = self
+                .meta
+                .iter()
+                .find(|t| t.name == topic)
+                .map_or(0, |t| t.partitions.len());
             self.modal = Modal::AddPartitions(PartForm {
                 topic,
+                current,
                 total: String::new(),
+                is_prod: self.is_prod(),
+                confirm: String::new(),
+                focus: 0,
+                error: None,
             });
         }
     }
@@ -903,7 +935,7 @@ impl App {
                     f.focus = (f.focus + 1) % 3;
                     self.modal = Modal::Create(f);
                 }
-                Enter => self.submit_create(&f),
+                Enter => self.submit_create(f),
                 Backspace => {
                     Self::field_mut(&mut f).pop();
                     self.modal = Modal::Create(f);
@@ -917,9 +949,21 @@ impl App {
 
             Modal::AddPartitions(mut f) => match key.code {
                 Esc => {}
-                Enter => self.submit_add_partitions(&f),
+                Enter => self.submit_add_partitions(f),
+                Tab_ | BackTab if f.is_prod => {
+                    f.focus = 1 - f.focus;
+                    self.modal = Modal::AddPartitions(f);
+                }
                 Backspace => {
-                    f.total.pop();
+                    if f.focus == 0 {
+                        f.total.pop()
+                    } else {
+                        f.confirm.pop()
+                    };
+                    self.modal = Modal::AddPartitions(f);
+                }
+                Char(c) if f.focus == 1 => {
+                    f.confirm.push(c);
                     self.modal = Modal::AddPartitions(f);
                 }
                 Char(c) if c.is_ascii_digit() => {
@@ -931,7 +975,7 @@ impl App {
 
             Modal::Delete(mut f) => match key.code {
                 Esc => {}
-                Enter => self.submit_delete(&f),
+                Enter => self.submit_delete(f),
                 Backspace => {
                     f.confirm.pop();
                     self.modal = Modal::Delete(f);
@@ -972,13 +1016,37 @@ impl App {
         }
     }
 
-    fn submit_create(&mut self, f: &CreateForm) {
-        if f.name.trim().is_empty() {
-            self.modal = Modal::Error("topic name required".into());
+    // Validation failures keep the form open with an inline message: a
+    // dismiss-with-any-key popup would swallow the next keystroke and drop the
+    // following ones onto the dashboard (on prod, `a` = add partitions).
+
+    fn submit_create(&mut self, mut f: CreateForm) {
+        let partitions = f.partitions.trim().parse::<i32>();
+        let replication = f.replication.trim().parse::<i32>();
+        let err = if f.name.trim().is_empty() {
+            Some("topic name required".to_string())
+        } else if !matches!(partitions, Ok(1..)) {
+            Some("partitions must be a number ≥ 1".to_string())
+        } else if !matches!(replication, Ok(1..)) {
+            Some("replication must be a number ≥ 1".to_string())
+        } else if self.brokers > 0
+            && replication
+                .as_ref()
+                .is_ok_and(|r| *r as usize > self.brokers)
+        {
+            Some(format!(
+                "replication can't exceed the {} broker(s) in this cluster",
+                self.brokers
+            ))
+        } else {
+            None
+        };
+        if err.is_some() {
+            f.error = err;
+            self.modal = Modal::Create(f);
             return;
         }
-        let partitions: i32 = f.partitions.trim().parse().unwrap_or(1);
-        let replication: i32 = f.replication.trim().parse().unwrap_or(3);
+        let (partitions, replication) = (partitions.unwrap_or(1), replication.unwrap_or(1));
         self.status = format!("creating {}…", f.name.trim());
         self.worker.send(Cmd::Create {
             name: f.name.trim().to_string(),
@@ -987,11 +1055,24 @@ impl App {
         });
     }
 
-    fn submit_add_partitions(&mut self, f: &PartForm) {
-        let Ok(total) = f.total.trim().parse::<usize>() else {
-            self.modal = Modal::Error("partition count must be a number".into());
-            return;
+    fn submit_add_partitions(&mut self, mut f: PartForm) {
+        let total = f.total.trim().parse::<usize>().unwrap_or(0);
+        let err = if total <= f.current {
+            Some(format!(
+                "enter a total above the current {} (partitions can only increase)",
+                f.current
+            ))
+        } else if f.is_prod && f.confirm.trim() != f.topic {
+            f.focus = 1;
+            Some("PROD: type the topic name to confirm".to_string())
+        } else {
+            None
         };
+        if err.is_some() {
+            f.error = err;
+            self.modal = Modal::AddPartitions(f);
+            return;
+        }
         self.status = format!("adding partitions to {}…", f.topic);
         self.worker.send(Cmd::AddPartitions {
             name: f.topic.clone(),
@@ -999,11 +1080,12 @@ impl App {
         });
     }
 
-    fn submit_delete(&mut self, f: &DeleteForm) {
+    fn submit_delete(&mut self, mut f: DeleteForm) {
         // Prod guardrail applies to both topics and groups: the typed
         // confirmation must match the target name.
         if f.is_prod && f.confirm.trim() != f.target {
-            self.modal = Modal::Error("confirmation text did not match the name".into());
+            f.error = Some("confirmation text did not match the name".into());
+            self.modal = Modal::Delete(f);
             return;
         }
         match f.kind {

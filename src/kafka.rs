@@ -121,6 +121,8 @@ pub struct KafkaClient {
     /// ops. Reading it is free (no network) - that's what keeps navigation
     /// instant.
     meta: Vec<TopicMeta>,
+    /// Broker count from the same fetch; caps the default replication factor.
+    pub brokers: usize,
 }
 
 impl KafkaClient {
@@ -151,7 +153,7 @@ impl KafkaClient {
             .build()
             .context("building admin runtime")?;
 
-        let meta = fetch_meta(&consumer)?;
+        let (meta, brokers) = fetch_meta(&consumer)?;
 
         Ok(Self {
             profile: profile.clone(),
@@ -160,12 +162,13 @@ impl KafkaClient {
             admin,
             rt,
             meta,
+            brokers,
         })
     }
 
     /// Re-fetch cluster metadata (after create/delete/add-partitions).
     pub fn reload_meta(&mut self) -> Result<()> {
-        self.meta = fetch_meta(&self.consumer)?;
+        (self.meta, self.brokers) = fetch_meta(&self.consumer)?;
         Ok(())
     }
 
@@ -428,8 +431,9 @@ fn parse_topic_strings(bytes: &[u8], with_partitions: bool) -> Vec<String> {
     out
 }
 
-/// One cluster-wide metadata fetch → owned, Send-safe topic/partition structs.
-fn fetch_meta(consumer: &BaseConsumer<MskContext>) -> Result<Vec<TopicMeta>> {
+/// One cluster-wide metadata fetch → owned, Send-safe topic/partition structs
+/// plus the broker count.
+fn fetch_meta(consumer: &BaseConsumer<MskContext>) -> Result<(Vec<TopicMeta>, usize)> {
     let md = consumer
         .fetch_metadata(None, TIMEOUT)
         .context("fetching metadata")?;
@@ -455,7 +459,7 @@ fn fetch_meta(consumer: &BaseConsumer<MskContext>) -> Result<Vec<TopicMeta>> {
         })
         .collect();
     topics.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(topics)
+    Ok((topics, md.brokers().len()))
 }
 
 /// Client config for the env's declared wire protocol.

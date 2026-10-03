@@ -38,6 +38,7 @@ pub enum Evt {
     Connected {
         profile: EnvProfile,
         meta: Vec<TopicMeta>,
+        brokers: usize,
     },
     ConnectFailed(String),
     Topics(Vec<TopicMeta>),
@@ -90,9 +91,16 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
         match cmd {
             Cmd::Connect(profile) => match KafkaClient::connect(&profile) {
                 Ok(c) => {
-                    let meta = c.metadata();
+                    let (meta, brokers) = (c.metadata(), c.brokers);
                     client = Some(c);
-                    send(evt, Evt::Connected { profile, meta });
+                    send(
+                        evt,
+                        Evt::Connected {
+                            profile,
+                            meta,
+                            brokers,
+                        },
+                    );
                 }
                 Err(e) => send(evt, Evt::ConnectFailed(connect_error(&e, &profile))),
             },
