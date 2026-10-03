@@ -1,9 +1,21 @@
-# git-cliff changelog config (conventional commits).
+# git-cliff changelog config (conventional commits), used by release-plz.
 [changelog]
-header = "# Changelog\n\n"
+# Must match the top of CHANGELOG.md exactly, or release-plz inserts a second header.
+header = """
+# Changelog
+
+All notable changes to kitz are documented here. Managed by
+[release-plz](https://release-plz.dev) from conventional commits.
+
+"""
 body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
-### {{ group | upper_first }}
+### {{ group | striptags | trim | upper_first }}
 {% for commit in commits %}
 - {{ commit.message | upper_first }}\
 {% endfor %}
@@ -14,13 +26,20 @@ trim = true
 [git]
 conventional_commits = true
 filter_unconventional = true
+# Internal QA finding IDs (BUG-001, UX-005, MISS-002) mean nothing in release notes.
+commit_preprocessors = [
+  { pattern = '\b(BUG|UX|MISS)-\d+\s*', replace = "" },
+]
+# The <!-- n --> prefixes only fix the section order; the template strips them.
 commit_parsers = [
-  { message = "^feat", group = "Features" },
-  { message = "^fix", group = "Bug Fixes" },
-  { message = "^perf", group = "Performance" },
-  { message = "^refactor", group = "Refactor" },
-  { message = "^doc", group = "Documentation" },
-  { message = "^test", group = "Testing" },
-  { message = "^chore|^ci|^build", skip = true },
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^build\\(deps\\)", skip = true },
+  { message = "^build", group = "<!-- 3 -->Packaging" },
+  { message = "^doc", group = "<!-- 4 -->Documentation" },
+  { message = "^refactor", group = "<!-- 5 -->Refactor" },
+  { message = "^test", group = "<!-- 6 -->Testing" },
+  { message = "^chore|^ci|^style", skip = true },
 ]
 tag_pattern = "v[0-9]*"
