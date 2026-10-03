@@ -7,35 +7,35 @@
 //! instant; expensive reads (watermarks, groups, peek) are requested lazily
 //! and land asynchronously with a loading indicator in the meantime.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use ratatui::widgets::{ListState, TableState};
-use ratatui_flip_panel::FlipState;
 
 use crate::config::{Config, EnvProfile};
-use crate::kafka::{EventRecord, GroupSummary, PartitionInfo, TopicDetail, TopicMeta};
+use crate::kafka::{EventRecord, GroupSummary, PartitionLag, TopicDetail, TopicMeta};
 use crate::worker::{Cmd, Evt, Worker};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Screen {
     EnvSelect,
     Main,
-    /// Full-screen cluster-wide consumer groups list (toggled with `G`).
+}
+
+/// The two top-level views of a connected cluster. Each is a list on the left
+/// and a detail view of the selection on the right; `⇥` switches.
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum View {
+    Topics,
     Groups,
 }
 
-/// Dashboard panels. Right column is now topic-scoped (Detail) + global Logs;
-/// consumer groups moved to their own full-screen view (they're cluster-wide,
-/// so pinning them next to a highlighted topic was confusing).
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum Panel {
-    Topics,
-    Graph,
-    /// Bottom-left pane; flips between Detail (front) and Config (back) with `f`.
-    Detail,
-    Logs,
-}
+/// How often the selected topic's offsets are re-polled (counts + rate).
+const POLL_EVERY: Duration = Duration::from_secs(3);
+/// Selection must settle this long before offsets load, so scrolling through
+/// a long list doesn't fire a request per row.
+const SETTLE: Duration = Duration::from_millis(250);
 
 /// Connection in progress - drives the spinner overlay.
 pub struct Connecting {
@@ -47,7 +47,6 @@ pub struct Connecting {
 pub enum ToastLevel {
     Info,
     Success,
-    Warning,
     Error,
 }
 
@@ -63,9 +62,13 @@ pub enum Modal {
     Create(CreateForm),
     Delete(DeleteForm),
     AddPartitions(PartForm),
+    /// Latest messages of a topic, newest first (Enter on a topic).
     Peek {
+        topic: String,
         records: Vec<EventRecord>,
         sel: usize,
+        /// Lines scrolled in the payload pane (reset when `sel` changes).
+        scroll: u16,
     },
     /// Context action menu: every action for the current
     /// screen/pane. Keeps the footer to essentials.
@@ -74,6 +77,8 @@ pub enum Modal {
         sel: usize,
     },
     Help,
+    /// Activity log overlay (`L`); the value is lines scrolled back.
+    Logs(u16),
     Error(String),
 }
 
@@ -89,6 +94,8 @@ pub struct CreateForm {
     pub partitions: String,
     pub replication: String,
     pub focus: usize,
+    /// Validation message shown inside the form (the form stays open).
+    pub error: Option<String>,
 }
 
 pub struct DeleteForm {
@@ -97,12 +104,20 @@ pub struct DeleteForm {
     pub target: String,
     pub confirm: String,
     pub is_prod: bool,
+    pub error: Option<String>,
 }
 
 #[derive(Default)]
 pub struct PartForm {
     pub topic: String,
+    pub current: usize,
     pub total: String,
+    /// Prod only: typed topic name, same guardrail as delete (irreversible).
+    pub is_prod: bool,
+    pub confirm: String,
+    /// 0 = total, 1 = confirm.
+    pub focus: usize,
+    pub error: Option<String>,
 }
 
 pub struct App {
@@ -114,48 +129,54 @@ pub struct App {
     pub connected: Option<EnvProfile>,
     pub connecting: Option<Connecting>,
 
-    pub focus: Panel,
-    pub zoom: bool,
+    pub view: View,
 
     /// Cached cluster metadata - the source for the topic list + detail. Free
     /// to read (no network), so navigation never blocks.
     pub meta: Vec<TopicMeta>,
     pub topic_state: ListState,
+    /// Filter for the active tab's list (cleared when switching tabs).
     pub filter: String,
     pub filtering: bool,
     pub detail: Option<TopicDetail>,
+    /// Lines scrolled in the right-hand detail view (PgUp/PgDn).
     pub detail_scroll: u16,
     pub loading_watermarks: bool,
+    /// When the current topic got selected (offset loads wait for `SETTLE`).
+    selected_at: Instant,
+    last_poll: Instant,
+    /// Message totals for topics whose offsets have been loaded this session -
+    /// shown in the topic list.
+    pub counts: HashMap<String, i64>,
 
     /// Config of the currently selected topic: (topic, [(key,value)]).
     pub topic_config: Option<(String, Vec<(String, String)>)>,
-    pub loading_config: bool,
-    /// Bottom-left pane flip animation (Detail front ⟷ Config back).
-    pub flip: FlipState,
 
-    // Live incoming-events graph (top-right). Sampling is opt-in per topic via `w`.
+    /// Messages/second for the selected topic, one sample per poll.
     pub rate: Vec<u64>,
-    pub rate_topic: Option<String>,
-    rate_last_total: Option<i64>,
-    rate_last_at: Instant,
+    /// (topic, total, when) of the previous poll, to turn deltas into a rate.
+    rate_last: Option<(String, i64, Instant)>,
 
     pub groups: Vec<GroupSummary>,
     pub group_state: TableState,
     pub groups_loaded: bool,
     pub loading_groups: bool,
+    /// Committed offsets per group, filled in one group at a time.
+    pub lags: HashMap<String, Vec<PartitionLag>>,
+    lag_queue: Vec<String>,
 
     pub peeking: bool,
 
     /// Activity/debug log. Newest last; capped.
     pub logs: Vec<String>,
-    /// Lines scrolled back from the newest (0 = pinned to newest).
-    pub logs_scroll: u16,
 
     pub toast: Option<Toast>,
 
     pub modal: Modal,
     pub status: String,
     pub should_quit: bool,
+    /// Brokers in the connected cluster (caps the default replication factor).
+    pub brokers: usize,
 }
 
 impl App {
@@ -169,8 +190,7 @@ impl App {
             env_state,
             connected: None,
             connecting: None,
-            focus: Panel::Topics,
-            zoom: false,
+            view: View::Topics,
             meta: Vec::new(),
             topic_state: ListState::default(),
             filter: String::new(),
@@ -178,25 +198,32 @@ impl App {
             detail: None,
             detail_scroll: 0,
             loading_watermarks: false,
+            selected_at: Instant::now(),
+            last_poll: Instant::now(),
+            counts: HashMap::new(),
             topic_config: None,
-            loading_config: false,
-            flip: FlipState::new(Duration::from_millis(280)),
             rate: Vec::new(),
-            rate_topic: None,
-            rate_last_total: None,
-            rate_last_at: Instant::now(),
+            rate_last: None,
             groups: Vec::new(),
             group_state: TableState::default(),
             groups_loaded: false,
             loading_groups: false,
+            lags: HashMap::new(),
+            lag_queue: Vec::new(),
             peeking: false,
             logs: Vec::new(),
-            logs_scroll: 0,
             toast: None,
             modal: Modal::None,
-            status: "↑↓ select env · Enter connect · q quit".into(),
+            status: String::new(),
             should_quit: false,
+            brokers: 0,
         }
+    }
+
+    /// Connect straight away (single env, or `kitz <env>`), skipping the picker.
+    pub fn connect_to(&mut self, idx: usize) {
+        self.env_state.select(Some(idx));
+        self.start_connect();
     }
 
     /// Append a timestamped line to the activity log (capped at 500).
@@ -218,34 +245,36 @@ impl App {
         });
     }
 
-    /// Whether the flip animation is mid-flight (drives faster redraws).
-    pub fn animating(&self) -> bool {
-        self.flip.is_animating()
-    }
-
-    /// Called each tick: advance the flip animation, expire the toast, drive
-    /// live rate sampling.
+    /// Called each tick: expire the toast and keep the selected topic's
+    /// counts/rate fresh.
     pub fn tick(&mut self) {
-        self.flip.tick();
-
         if let Some(t) = &self.toast {
-            if t.born.elapsed().as_millis() > 3600 {
+            // Errors stay up long enough to actually read.
+            let ttl = if matches!(t.level, ToastLevel::Error) {
+                8000
+            } else {
+                3600
+            };
+            if t.born.elapsed().as_millis() > ttl {
                 self.toast = None;
             }
         }
 
-        // Incoming-events graph: while a topic is opted-in (via `w`) and still
-        // selected, re-request its watermarks every few seconds; the delta is
-        // the events produced in that window.
-        if let Some(rt) = self.rate_topic.clone() {
-            if self.selected_topic_name().as_deref() != Some(rt.as_str()) {
-                self.rate_topic = None;
-                self.rate.clear();
-                self.rate_last_total = None;
-            } else if self.rate_last_at.elapsed().as_millis() > 3500 {
-                self.rate_last_at = Instant::now();
-                self.worker.send(Cmd::Watermarks(rt));
-            }
+        // Offsets for the selected topic load by themselves once the
+        // selection settles, then re-poll so counts and rate stay live.
+        if self.screen != Screen::Main || self.view != View::Topics || self.loading_watermarks {
+            return;
+        }
+        let Some(d) = &self.detail else { return };
+        let due = if d.watermarks_loaded {
+            self.last_poll.elapsed() >= POLL_EVERY
+        } else {
+            self.selected_at.elapsed() >= SETTLE
+        };
+        if due {
+            self.loading_watermarks = true;
+            self.last_poll = Instant::now();
+            self.worker.send(Cmd::Watermarks(d.name.clone()));
         }
     }
 
@@ -270,9 +299,62 @@ impl App {
             .collect()
     }
 
-    pub fn topic_row(&self, meta_idx: usize) -> (&str, usize) {
-        let t = &self.meta[meta_idx];
-        (&t.name, t.partitions.len())
+    /// Indices into `self.groups` matching the current filter.
+    pub fn filtered_groups(&self) -> Vec<usize> {
+        let f = self.filter.to_lowercase();
+        self.groups
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| f.is_empty() || g.name.to_lowercase().contains(&f))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    pub fn selected_group(&self) -> Option<&GroupSummary> {
+        let i = *self.filtered_groups().get(self.group_state.selected()?)?;
+        self.groups.get(i)
+    }
+
+    /// Total lag of a group, once its offsets have loaded.
+    pub fn group_lag(&self, group: &str) -> Option<i64> {
+        self.lags
+            .get(group)
+            .map(|ps| ps.iter().map(PartitionLag::lag).sum())
+    }
+
+    /// Topics a group reads: from live members' subscriptions plus anything it
+    /// has committed offsets on (so idle groups still show their topics).
+    pub fn group_topics(&self, g: &GroupSummary) -> Vec<String> {
+        let mut t = g.topics.clone();
+        for p in self.lags.get(&g.name).into_iter().flatten() {
+            if !t.contains(&p.topic) {
+                t.push(p.topic.clone());
+            }
+        }
+        t.sort();
+        t
+    }
+
+    /// Groups reading `topic`, with their lag on it (None = not loaded yet,
+    /// or a live member with no committed offset).
+    pub fn consumers_of(&self, topic: &str) -> Vec<(&GroupSummary, Option<i64>)> {
+        self.groups
+            .iter()
+            .filter_map(|g| {
+                let parts: Vec<_> = self
+                    .lags
+                    .get(&g.name)
+                    .into_iter()
+                    .flatten()
+                    .filter(|p| p.topic == topic)
+                    .collect();
+                if parts.is_empty() {
+                    g.topics.iter().any(|t| t == topic).then_some((g, None))
+                } else {
+                    Some((g, Some(parts.iter().map(|p| p.lag()).sum())))
+                }
+            })
+            .collect()
     }
 
     fn selected_topic_name(&self) -> Option<String> {
@@ -296,11 +378,17 @@ impl App {
 
     fn apply(&mut self, evt: Evt) {
         match evt {
-            Evt::Connected { profile, meta } => {
+            Evt::Connected {
+                profile,
+                meta,
+                brokers,
+            } => {
+                self.brokers = brokers;
                 self.log(format!(
-                    "connected to {} · {} topics",
+                    "connected to {} · {} topics · {} broker(s)",
                     profile.name,
-                    meta.len()
+                    meta.len(),
+                    brokers
                 ));
                 self.connected = Some(profile);
                 self.connecting = None;
@@ -308,12 +396,11 @@ impl App {
                 self.topic_state
                     .select((!self.meta.is_empty()).then_some(0));
                 self.screen = Screen::Main;
-                self.status = format!("{} topics", self.meta.len());
+                self.status.clear();
                 self.rebuild_detail();
-                // Load groups in the background so Detail can show which groups
-                // consume the selected topic (no blocking on connect).
-                self.loading_groups = true;
-                self.worker.send(Cmd::Groups);
+                // Groups (and then their lag) load in the background so the
+                // topic view can show who consumes it.
+                self.load_groups();
             }
             Evt::ConnectFailed(e) => {
                 self.connecting = None;
@@ -321,54 +408,60 @@ impl App {
                 self.modal = Modal::Error(format!("connect failed: {e}"));
             }
             Evt::Topics(meta) => {
-                self.log(format!("topics refreshed · {}", meta.len()));
                 self.meta = meta;
                 let n = self.filtered_topics().len();
                 if self.topic_state.selected().is_none_or(|s| s >= n) {
                     self.topic_state.select((n > 0).then_some(0));
                 }
-                self.status = format!("{} topics", self.meta.len());
                 self.rebuild_detail();
             }
             Evt::Watermarks { topic, marks } => {
                 self.loading_watermarks = false;
-                let total: i64 = marks.iter().map(|(_, _, high)| *high).sum();
-                if let Some(d) = &mut self.detail {
-                    if d.name == topic {
-                        for (id, low, high) in marks {
-                            if let Some(p) = d.partitions.iter_mut().find(|p| p.id == id) {
-                                p.low = low;
-                                p.high = high;
-                            }
-                        }
-                        d.watermarks_loaded = true;
+                let total: i64 = marks.iter().map(|(_, low, high)| high - low).sum();
+                let end: i64 = marks.iter().map(|(_, _, high)| high).sum();
+                self.counts.insert(topic.clone(), total);
+                let Some(d) = &mut self.detail else { return };
+                if d.name != topic {
+                    return;
+                }
+                for (id, low, high) in marks {
+                    if let Some(p) = d.partitions.iter_mut().find(|p| p.id == id) {
+                        p.low = low;
+                        p.high = high;
                     }
                 }
-                // Feed the incoming-events graph.
-                if self.rate_topic.as_deref() == Some(topic.as_str()) {
-                    if let Some(prev) = self.rate_last_total {
-                        let delta = (total - prev).max(0) as u64;
-                        self.rate.push(delta);
-                        if self.rate.len() > 120 {
+                d.watermarks_loaded = true;
+                // Rate = new messages since the last poll / measured gap.
+                if let Some((t, prev, at)) = &self.rate_last {
+                    if *t == topic {
+                        let secs = at.elapsed().as_secs_f64().max(0.001);
+                        self.rate
+                            .push(((end - prev).max(0) as f64 / secs).round() as u64);
+                        if self.rate.len() > 60 {
                             self.rate.remove(0);
                         }
                     }
-                    self.rate_last_total = Some(total);
-                } else {
-                    self.log(format!("loaded event counts for {topic}"));
                 }
+                self.rate_last = Some((topic, end, Instant::now()));
             }
             Evt::Groups(groups) => {
-                self.log(format!("loaded {} consumer groups", groups.len()));
                 self.groups = groups;
                 self.groups_loaded = true;
                 self.loading_groups = false;
-                self.group_state
-                    .select((!self.groups.is_empty()).then_some(0));
-                self.status = format!("{} consumer groups", self.groups.len());
+                let n = self.filtered_groups().len();
+                if self.group_state.selected().is_none_or(|s| s >= n) {
+                    self.group_state.select((n > 0).then_some(0));
+                }
+                // Lag loads one group at a time so other requests (offsets
+                // for the selected topic, peek) interleave between groups.
+                self.lag_queue = self.groups.iter().rev().map(|g| g.name.clone()).collect();
+                self.next_lag();
+            }
+            Evt::GroupLag { group, parts } => {
+                self.lags.insert(group, parts);
+                self.next_lag();
             }
             Evt::TopicConfig { topic, entries } => {
-                self.loading_config = false;
                 // Keep only if it's still the selected topic.
                 if self
                     .detail
@@ -379,13 +472,19 @@ impl App {
                     self.topic_config = Some((topic, entries));
                 }
             }
-            Evt::Peek { records } => {
+            Evt::Peek { topic, records } => {
                 self.peeking = false;
-                self.log(format!("peeked {} events", records.len()));
-                self.modal = Modal::Peek { records, sel: 0 };
+                self.status.clear();
+                self.log(format!("{topic}: loaded {} messages", records.len()));
+                self.modal = Modal::Peek {
+                    topic,
+                    records,
+                    sel: 0,
+                    scroll: 0,
+                };
             }
             Evt::Ok(msg) => {
-                self.status = msg.clone();
+                self.status.clear();
                 self.toast(ToastLevel::Success, msg);
             }
             Evt::Failed(e) => {
@@ -393,18 +492,28 @@ impl App {
                 self.loading_groups = false;
                 self.peeking = false;
                 // Non-blocking: operation failures pop a toast, not a modal.
+                self.status.clear();
                 self.toast(ToastLevel::Error, e);
             }
         }
     }
 
+    fn next_lag(&mut self) {
+        if let Some(g) = self.lag_queue.pop() {
+            self.worker.send(Cmd::GroupLag(g));
+        }
+    }
+
+    fn load_groups(&mut self) {
+        if self.loading_groups {
+            return;
+        }
+        self.loading_groups = true;
+        self.lag_queue.clear();
+        self.worker.send(Cmd::Groups);
+    }
+
     fn rebuild_detail(&mut self) {
-        self.detail_scroll = 0;
-        self.loading_watermarks = false;
-        // Selection changed → stop the previous topic's live graph.
-        self.rate_topic = None;
-        self.rate.clear();
-        self.rate_last_total = None;
         let Some(name) = self.selected_topic_name() else {
             self.detail = None;
             self.topic_config = None;
@@ -415,35 +524,25 @@ impl App {
             self.topic_config = None;
             return;
         };
+        // Same topic, same shape (e.g. a refresh): keep loaded data and rate.
+        if self
+            .detail
+            .as_ref()
+            .is_some_and(|d| d.name == name && d.partitions.len() == t.partitions.len())
+        {
+            return;
+        }
+        self.detail_scroll = 0;
+        self.loading_watermarks = false;
+        self.selected_at = Instant::now();
+        self.rate.clear();
         self.detail = Some(TopicDetail {
             name: name.clone(),
-            partitions: t
-                .partitions
-                .iter()
-                .map(|p| PartitionInfo {
-                    id: p.id,
-                    leader: p.leader,
-                    replicas: p.replicas,
-                    isr: p.isr,
-                    low: -1,
-                    high: -1,
-                })
-                .collect(),
+            partitions: t.partitions.clone(),
             watermarks_loaded: false,
         });
-        // Fetch this topic's config for the top-right pane (async, non-blocking).
         self.topic_config = None;
-        self.loading_config = true;
         self.worker.send(Cmd::TopicConfig(name));
-    }
-
-    /// Names of consumer groups subscribed to `topic` (from the group list).
-    pub fn groups_for_topic(&self, topic: &str) -> Vec<&str> {
-        self.groups
-            .iter()
-            .filter(|g| g.topics.iter().any(|t| t == topic))
-            .map(|g| g.name.as_str())
-            .collect()
     }
 
     // ── Commands to the worker ───────────────────────────────────────────
@@ -471,14 +570,21 @@ impl App {
         self.meta.clear();
         self.topic_state.select(None);
         self.detail = None;
+        self.topic_config = None;
         self.detail_scroll = 0;
         self.loading_watermarks = false;
+        self.counts.clear();
+        self.rate.clear();
+        self.rate_last = None;
         self.groups.clear();
         self.group_state.select(None);
         self.groups_loaded = false;
         self.loading_groups = false;
+        self.lags.clear();
+        self.lag_queue.clear();
         self.filter.clear();
         self.filtering = false;
+        self.view = View::Topics;
     }
 
     /// Index of the currently-connected env in the config (for the picker).
@@ -493,83 +599,22 @@ impl App {
             return;
         };
         if self.connecting.is_none() && self.current_env_index() == Some(idx) {
-            let name = env.name.clone();
-            self.toast(ToastLevel::Warning, format!("already on {name}"));
+            if self.screen == Screen::EnvSelect {
+                self.screen = Screen::Main; // picked the env we're on: just go back
+            } else {
+                let name = env.name.clone();
+                self.toast(ToastLevel::Info, format!("already on {name}"));
+            }
             return;
         }
         self.env_state.select(Some(idx));
         self.start_connect();
     }
 
-    /// Jump to the top/bottom of the focused list.
-    fn jump(&mut self, top: bool) {
-        match self.focus {
-            Panel::Topics => {
-                let len = self.filtered_topics().len();
-                if len > 0 {
-                    self.topic_state.select(Some(if top { 0 } else { len - 1 }));
-                    self.rebuild_detail();
-                }
-            }
-            Panel::Detail => {
-                let max = self
-                    .detail
-                    .as_ref()
-                    .map(|d| d.partitions.len() as u16)
-                    .unwrap_or(0);
-                self.detail_scroll = if top { 0 } else { max };
-            }
-            Panel::Logs => {
-                self.logs_scroll = if top { self.logs.len() as u16 } else { 0 };
-            }
-            Panel::Graph => {}
-        }
-    }
-
-    fn load_watermarks(&mut self) {
-        if self.loading_watermarks {
-            return;
-        }
-        let Some(name) = self
-            .detail
-            .as_ref()
-            .map(|d| (d.name.clone(), d.watermarks_loaded))
-        else {
-            return;
-        };
-        if name.1 && self.rate_topic.as_deref() == Some(name.0.as_str()) {
-            self.toast(ToastLevel::Info, "already tracking this topic");
-            return;
-        }
-        // `w` loads counts AND starts the live incoming-events graph.
-        self.loading_watermarks = true;
-        self.rate_topic = Some(name.0.clone());
-        self.rate.clear();
-        self.rate_last_total = None;
-        self.rate_last_at = Instant::now();
-        self.toast(
-            ToastLevel::Info,
-            format!("tracking {} - graph is live", name.0),
-        );
-        self.worker.send(Cmd::Watermarks(name.0));
-    }
-
-    fn ensure_groups(&mut self) {
-        if self.groups_loaded || self.loading_groups {
-            return;
-        }
-        self.loading_groups = true;
-        self.status = "loading consumer groups…".into();
-        self.worker.send(Cmd::Groups);
-    }
-
     fn refresh(&mut self) {
         self.status = "refreshing…".into();
         self.worker.send(Cmd::RefreshTopics);
-        if self.groups_loaded {
-            self.loading_groups = true;
-            self.worker.send(Cmd::Groups);
-        }
+        self.load_groups();
     }
 
     fn peek(&mut self) {
@@ -580,7 +625,7 @@ impl App {
             return;
         };
         self.peeking = true;
-        self.status = format!("peeking {name}…");
+        self.status = format!("loading messages from {name}…");
         self.worker.send(Cmd::Peek(name));
     }
 
@@ -595,56 +640,86 @@ impl App {
         Some((cur + delta).clamp(0, len as isize - 1) as usize)
     }
 
-    fn cycle_focus(&mut self, forward: bool) {
-        // Visual order: Topics (TL) → Graph (TR) → Detail (BL) → Logs (BR).
-        self.focus = match (self.focus, forward) {
-            (Panel::Topics, true) => Panel::Graph,
-            (Panel::Graph, true) => Panel::Detail,
-            (Panel::Detail, true) => Panel::Logs,
-            (Panel::Logs, true) => Panel::Topics,
-            (Panel::Topics, false) => Panel::Logs,
-            (Panel::Logs, false) => Panel::Detail,
-            (Panel::Detail, false) => Panel::Graph,
-            (Panel::Graph, false) => Panel::Topics,
-        };
-    }
-
+    /// Move the active tab's selection by `delta` (clamped).
     fn nav(&mut self, delta: isize) {
-        match self.focus {
-            Panel::Topics => {
+        match self.view {
+            View::Topics => {
                 let len = self.filtered_topics().len();
                 let n = Self::next_index(self.topic_state.selected(), len, delta);
                 self.topic_state.select(n);
                 self.rebuild_detail(); // instant - from cache, no network
             }
-            Panel::Detail => {
-                let max = self
-                    .detail
-                    .as_ref()
-                    .map(|d| d.partitions.len() as u16)
-                    .unwrap_or(0);
-                self.detail_scroll =
-                    (self.detail_scroll as isize + delta).clamp(0, max as isize) as u16;
+            View::Groups => {
+                let len = self.filtered_groups().len();
+                let n = Self::next_index(self.group_state.selected(), len, delta);
+                self.group_state.select(n);
+                self.detail_scroll = 0;
             }
-            Panel::Logs => {
-                // logs_scroll counts lines back from newest.
-                let max = self.logs.len() as isize;
-                self.logs_scroll = (self.logs_scroll as isize + delta).clamp(0, max) as u16;
-            }
-            Panel::Graph => {}
         }
     }
 
-    /// Navigate the fullscreen groups view.
-    fn nav_groups(&mut self, delta: isize) {
-        let n = Self::next_index(self.group_state.selected(), self.groups.len(), delta);
-        self.group_state.select(n);
+    fn set_view(&mut self, view: View) {
+        if self.view == view {
+            return;
+        }
+        self.view = view;
+        self.filter.clear();
+        self.filtering = false;
+        self.detail_scroll = 0;
+        if view == View::Topics {
+            let n = self.filtered_topics().len();
+            if self.topic_state.selected().is_none_or(|s| s >= n) {
+                self.topic_state.select((n > 0).then_some(0));
+            }
+            self.rebuild_detail();
+        } else if self.group_state.selected().is_none() && !self.groups.is_empty() {
+            self.group_state.select(Some(0));
+        }
+    }
+
+    /// Change the filter text, keeping the selection on the same item while
+    /// it still matches (else the first match).
+    fn edit_filter(&mut self, edit: impl FnOnce(&mut String)) {
+        match self.view {
+            View::Topics => {
+                let prev = self.selected_topic_name();
+                edit(&mut self.filter);
+                let visible = self.filtered_topics();
+                let i = visible
+                    .iter()
+                    .position(|&m| Some(&self.meta[m].name) == prev.as_ref());
+                self.topic_state
+                    .select(i.or((!visible.is_empty()).then_some(0)));
+                self.rebuild_detail();
+            }
+            View::Groups => {
+                let prev = self.selected_group().map(|g| g.name.clone());
+                edit(&mut self.filter);
+                let visible = self.filtered_groups();
+                let i = visible
+                    .iter()
+                    .position(|&g| Some(&self.groups[g].name) == prev.as_ref());
+                self.group_state
+                    .select(i.or((!visible.is_empty()).then_some(0)));
+            }
+        }
     }
 
     // ── Input ──────────────────────────────────────────────────────────
 
-    pub fn on_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
-        use crossterm::event::KeyCode::*;
+    pub fn on_key(&mut self, key: ratatui::crossterm::event::KeyEvent) -> Result<()> {
+        use ratatui::crossterm::event::KeyCode::*;
+
+        // Ctrl-C always quits: raw mode swallows SIGINT, and in the filter it
+        // would otherwise type a 'c'.
+        if key.code == Char('c')
+            && key
+                .modifiers
+                .contains(ratatui::crossterm::event::KeyModifiers::CONTROL)
+        {
+            self.should_quit = true;
+            return Ok(());
+        }
 
         if !matches!(self.modal, Modal::None) {
             self.on_modal_key(key);
@@ -662,106 +737,125 @@ impl App {
             match key.code {
                 Esc => {
                     self.filtering = false;
-                    self.filter.clear();
-                    self.topic_state.select(Some(0));
-                    self.rebuild_detail();
+                    self.edit_filter(String::clear);
                 }
-                Enter => self.filtering = false,
-                Backspace => {
-                    self.filter.pop();
-                    self.topic_state.select(Some(0));
-                    self.rebuild_detail();
+                Enter | Down | Up => {
+                    self.filtering = false;
+                    // ↑↓ leave the filter and move in one go.
+                    if key.code != Enter {
+                        self.nav(if key.code == Down { 1 } else { -1 });
+                    }
                 }
-                Char(c) => {
-                    self.filter.push(c);
-                    self.topic_state.select(Some(0));
-                    self.rebuild_detail();
-                }
+                Backspace => self.edit_filter(|f| {
+                    f.pop();
+                }),
+                Char(c) => self.edit_filter(|f| f.push(c)),
                 _ => {}
             }
             return Ok(());
         }
 
-        match (self.screen, key.code) {
+        if self.screen == Screen::EnvSelect {
+            match key.code {
+                Char('q') => self.should_quit = true,
+                Up | Char('k') => {
+                    let n = Self::next_index(self.env_state.selected(), self.config.envs.len(), -1);
+                    self.env_state.select(n);
+                }
+                Down | Char('j') => {
+                    let n = Self::next_index(self.env_state.selected(), self.config.envs.len(), 1);
+                    self.env_state.select(n);
+                }
+                Enter => match self.env_state.selected() {
+                    Some(i) if self.connected.is_some() => self.switch_env(i),
+                    _ => self.start_connect(),
+                },
+                Esc if self.connected.is_some() => self.screen = Screen::Main,
+                Char(c @ '1'..='9') => self.switch_env((c as u8 - b'1') as usize),
+                Char('?') => self.modal = Modal::Help,
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        let page = 10;
+        match (self.view, key.code) {
             (_, Char('q')) => self.should_quit = true,
-
-            (Screen::EnvSelect, Up | Char('k')) => {
-                let n = Self::next_index(self.env_state.selected(), self.config.envs.len(), -1);
-                self.env_state.select(n);
-            }
-            (Screen::EnvSelect, Down | Char('j')) => {
-                let n = Self::next_index(self.env_state.selected(), self.config.envs.len(), 1);
-                self.env_state.select(n);
-            }
-            (Screen::EnvSelect, Enter) => self.start_connect(),
-
             (_, Char('?')) => self.modal = Modal::Help,
-            (Screen::Main | Screen::Groups, Char('x')) => self.open_actions(),
+            (_, Char('x')) => self.open_actions(),
+            (_, Char('L')) => self.modal = Modal::Logs(0),
 
-            (Screen::Main, Tab_ | Char('l') | Right) => self.cycle_focus(true),
-            (Screen::Main, BackTab | Char('h') | Left) => self.cycle_focus(false),
-            (Screen::Main, Char('z')) => self.zoom = !self.zoom,
-            (Screen::Main, Char('f')) => {
-                self.flip.flip();
+            (_, Tab_ | BackTab) => self.set_view(match self.view {
+                View::Topics => View::Groups,
+                View::Groups => View::Topics,
+            }),
+            (_, Char('t')) => self.set_view(View::Topics),
+            (_, Char('G')) => self.set_view(View::Groups),
+
+            (_, Up | Char('k')) => self.nav(-1),
+            (_, Down | Char('j')) => self.nav(1),
+            (_, Home | Char('g')) => self.nav(isize::MIN / 2),
+            (_, End) => self.nav(isize::MAX / 2),
+            (_, PageDown | Char(' ')) => {
+                self.detail_scroll = self.detail_scroll.saturating_add(page)
             }
+            (_, PageUp) => self.detail_scroll = self.detail_scroll.saturating_sub(page),
 
-            (Screen::Main, Char('g')) => self.jump(true),
-            (Screen::Main, Up | Char('k')) => self.nav(-1),
-            (Screen::Main, Down | Char('j')) => self.nav(1),
-
-            (Screen::Main, Char('r')) => self.refresh(),
-            (Screen::Main, Char('w')) => self.load_watermarks(),
-
-            // Full-screen consumer groups view.
-            (Screen::Main, Char('G')) => {
-                self.ensure_groups();
-                self.screen = Screen::Groups;
+            (_, Char('/')) => {
+                self.filtering = true;
+                self.edit_filter(String::clear);
             }
-
-            // ── Environment switching ──
-            (Screen::Main, Char('e')) => {
+            (_, Esc) if !self.filter.is_empty() => self.edit_filter(String::clear),
+            (_, Char('r')) => self.refresh(),
+            (_, Char('e')) => {
                 self.env_state
                     .select(Some(self.current_env_index().unwrap_or(0)));
                 self.screen = Screen::EnvSelect;
             }
-            (Screen::Main, Char(c)) if c.is_ascii_digit() && c != '0' => {
-                self.switch_env((c as u8 - b'1') as usize);
-            }
+            (_, Char(c @ '1'..='9')) => self.switch_env((c as u8 - b'1') as usize),
 
-            (Screen::Main, Char('/')) => {
-                self.focus = Panel::Topics;
-                self.filtering = true;
-                self.filter.clear();
-            }
-            (Screen::Main, Char('c')) => {
+            // ── Topics ──
+            (View::Topics, Enter | Char('m') | Char('p')) => self.peek(),
+            (View::Topics, Char('c')) => {
                 self.modal = Modal::Create(CreateForm {
                     partitions: "1".into(),
-                    replication: "3".into(),
+                    // 3 is the usual default, but it fails outright on smaller
+                    // clusters (MSK stag is often 2 brokers).
+                    replication: self.brokers.clamp(1, 3).to_string(),
                     ..Default::default()
                 });
             }
-            (Screen::Main, Char('d')) => self.open_delete(),
-            (Screen::Main, Char('a')) => self.open_add_partitions(),
-            (Screen::Main, Char('p')) => self.peek(),
-            (Screen::Main, Char('y')) => {
+            (View::Topics, Char('d')) => self.open_delete(),
+            (View::Topics, Char('a')) => self.open_add_partitions(),
+            (View::Topics, Char('y')) => {
                 if let Some(name) = self.selected_topic_name() {
                     self.copy(&name, "topic name");
                 }
             }
 
-            // ── Full-screen groups view ──
-            (Screen::Groups, Esc | Char('G')) => self.screen = Screen::Main,
-            (Screen::Groups, Up | Char('k')) => self.nav_groups(-1),
-            (Screen::Groups, Down | Char('j')) => self.nav_groups(1),
-            (Screen::Groups, Char('g')) => {
-                self.group_state
-                    .select((!self.groups.is_empty()).then_some(0));
+            // ── Consumer groups ──
+            (View::Groups, Char('d')) => self.open_delete_group(),
+            (View::Groups, Char('y')) => {
+                if let Some(name) = self.selected_group().map(|g| g.name.clone()) {
+                    self.copy(&name, "group name");
+                }
             }
-            (Screen::Groups, Char('d')) => self.open_delete_group(),
-            (Screen::Groups, Char('r')) => {
-                self.loading_groups = true;
-                self.status = "refreshing groups…".into();
-                self.worker.send(Cmd::Groups);
+            // Jump to the topic this group reads (first one).
+            (View::Groups, Enter) => {
+                let topic = self
+                    .selected_group()
+                    .and_then(|g| self.group_topics(g).into_iter().next());
+                if let Some(t) = topic {
+                    self.set_view(View::Topics);
+                    if let Some(i) = self
+                        .filtered_topics()
+                        .iter()
+                        .position(|&m| self.meta[m].name == t)
+                    {
+                        self.topic_state.select(Some(i));
+                        self.rebuild_detail();
+                    }
+                }
             }
 
             _ => {}
@@ -776,63 +870,88 @@ impl App {
                 target: topic,
                 confirm: String::new(),
                 is_prod: self.is_prod(),
+                error: None,
             });
         }
     }
 
     fn open_delete_group(&mut self) {
-        let Some(i) = self.group_state.selected() else {
-            return;
-        };
-        if let Some(g) = self.groups.get(i) {
+        if let Some(name) = self.selected_group().map(|g| g.name.clone()) {
             self.modal = Modal::Delete(DeleteForm {
                 kind: DeleteKind::Group,
-                target: g.name.clone(),
+                target: name,
                 confirm: String::new(),
                 is_prod: self.is_prod(),
+                error: None,
             });
         }
     }
 
     fn open_add_partitions(&mut self) {
         if let Some(topic) = self.selected_topic_name() {
+            let current = self
+                .meta
+                .iter()
+                .find(|t| t.name == topic)
+                .map_or(0, |t| t.partitions.len());
             self.modal = Modal::AddPartitions(PartForm {
                 topic,
+                current,
                 total: String::new(),
+                is_prod: self.is_prod(),
+                confirm: String::new(),
+                focus: 0,
+                error: None,
             });
         }
     }
 
     /// Build the context action menu for the current screen/pane.
     fn open_actions(&mut self) {
-        let items: Vec<(char, &'static str)> = match self.screen {
-            Screen::Groups => vec![
+        let items: Vec<(char, &'static str)> = match self.view {
+            View::Groups => vec![
                 ('d', "delete selected group"),
-                ('r', "refresh groups"),
+                ('y', "copy group name"),
+                ('/', "filter groups"),
+                ('t', "go to topics"),
+                ('r', "refresh"),
                 ('e', "switch environment"),
+                ('L', "activity log"),
             ],
-            _ => vec![
-                ('w', "load event counts"),
-                ('p', "peek events  (y copy payload)"),
-                ('/', "find topics"),
+            View::Topics => vec![
+                ('m', "view latest messages"),
+                ('/', "filter topics"),
                 ('c', "create topic"),
                 ('a', "add partitions"),
                 ('d', "delete topic"),
+                ('y', "copy topic name"),
+                ('G', "go to consumer groups"),
                 ('r', "refresh"),
-                ('G', "consumer groups"),
                 ('e', "switch environment"),
-                ('z', "zoom focused pane"),
+                ('L', "activity log"),
             ],
         };
         self.modal = Modal::Actions { items, sel: 0 };
     }
 
-    fn on_modal_key(&mut self, key: crossterm::event::KeyEvent) {
-        use crossterm::event::KeyCode::*;
+    fn on_modal_key(&mut self, key: ratatui::crossterm::event::KeyEvent) {
+        use ratatui::crossterm::event::KeyCode::*;
 
         let modal = std::mem::replace(&mut self.modal, Modal::None);
         match modal {
             Modal::Error(_) | Modal::Help | Modal::None => { /* any key dismisses */ }
+
+            Modal::Logs(mut back) => {
+                let max = self.logs.len() as u16;
+                match key.code {
+                    Up | Char('k') => back = (back + 1).min(max),
+                    Down | Char('j') => back = back.saturating_sub(1),
+                    PageUp => back = (back + 10).min(max),
+                    PageDown => back = back.saturating_sub(10),
+                    _ => return, // anything else closes
+                }
+                self.modal = Modal::Logs(back);
+            }
 
             Modal::Actions { items, mut sel } => match key.code {
                 Esc | Char('x') | Char('q') => {}
@@ -861,32 +980,49 @@ impl App {
                 _ => self.modal = Modal::Actions { items, sel },
             },
 
-            Modal::Peek { records, mut sel } => match key.code {
-                Esc | Char('q') => {} // modal already cleared → closes
-                Up | Char('k') => {
-                    sel = sel.saturating_sub(1);
-                    self.modal = Modal::Peek { records, sel };
-                }
-                Down | Char('j') => {
-                    sel = (sel + 1).min(records.len().saturating_sub(1));
-                    self.modal = Modal::Peek { records, sel };
-                }
-                Char('y') => {
-                    if let Some(r) = records.get(sel) {
-                        let payload = r.payload.clone();
-                        self.copy(&payload, "payload");
+            Modal::Peek {
+                topic,
+                records,
+                mut sel,
+                mut scroll,
+            } => {
+                match key.code {
+                    Esc | Char('q') => return, // modal already cleared → closes
+                    Char('r') => {
+                        // Reload: close and fetch again (the new list replaces it).
+                        self.peeking = true;
+                        self.status = format!("loading messages from {topic}…");
+                        self.worker.send(Cmd::Peek(topic.clone()));
                     }
-                    self.modal = Modal::Peek { records, sel };
-                }
-                Char('Y') => {
-                    if let Some(r) = records.get(sel) {
-                        let key = r.key.clone();
-                        self.copy(&key, "key");
+                    Up | Char('k') => (sel, scroll) = (sel.saturating_sub(1), 0),
+                    Down | Char('j') => {
+                        (sel, scroll) = ((sel + 1).min(records.len().saturating_sub(1)), 0)
                     }
-                    self.modal = Modal::Peek { records, sel };
+                    // ponytail: renderer clamps scroll (it knows the wrapped height);
+                    // overshooting PgDn makes PgUp lag. Store max_scroll if it bites.
+                    PageDown | Char(' ') => scroll = scroll.saturating_add(10),
+                    PageUp => scroll = scroll.saturating_sub(10),
+                    Char('y') => {
+                        if let Some(r) = records.get(sel) {
+                            let payload = r.payload.clone();
+                            self.copy(&payload, "payload");
+                        }
+                    }
+                    Char('Y') => {
+                        if let Some(r) = records.get(sel) {
+                            let key = r.key.clone();
+                            self.copy(&key, "key");
+                        }
+                    }
+                    _ => {}
                 }
-                _ => self.modal = Modal::Peek { records, sel },
-            },
+                self.modal = Modal::Peek {
+                    topic,
+                    records,
+                    sel,
+                    scroll,
+                };
+            }
 
             Modal::Create(mut f) => match key.code {
                 Esc => {}
@@ -894,7 +1030,7 @@ impl App {
                     f.focus = (f.focus + 1) % 3;
                     self.modal = Modal::Create(f);
                 }
-                Enter => self.submit_create(&f),
+                Enter => self.submit_create(f),
                 Backspace => {
                     Self::field_mut(&mut f).pop();
                     self.modal = Modal::Create(f);
@@ -908,9 +1044,21 @@ impl App {
 
             Modal::AddPartitions(mut f) => match key.code {
                 Esc => {}
-                Enter => self.submit_add_partitions(&f),
+                Enter => self.submit_add_partitions(f),
+                Tab_ | BackTab if f.is_prod => {
+                    f.focus = 1 - f.focus;
+                    self.modal = Modal::AddPartitions(f);
+                }
                 Backspace => {
-                    f.total.pop();
+                    if f.focus == 0 {
+                        f.total.pop()
+                    } else {
+                        f.confirm.pop()
+                    };
+                    self.modal = Modal::AddPartitions(f);
+                }
+                Char(c) if f.focus == 1 => {
+                    f.confirm.push(c);
                     self.modal = Modal::AddPartitions(f);
                 }
                 Char(c) if c.is_ascii_digit() => {
@@ -922,7 +1070,7 @@ impl App {
 
             Modal::Delete(mut f) => match key.code {
                 Esc => {}
-                Enter => self.submit_delete(&f),
+                Enter => self.submit_delete(f),
                 Backspace => {
                     f.confirm.pop();
                     self.modal = Modal::Delete(f);
@@ -939,7 +1087,7 @@ impl App {
     /// Re-dispatch a character as if the user typed it (used by the action
     /// menu so menu items and hotkeys share one code path).
     fn run_key(&mut self, c: char) {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         let _ = self.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::empty()));
     }
 
@@ -963,13 +1111,37 @@ impl App {
         }
     }
 
-    fn submit_create(&mut self, f: &CreateForm) {
-        if f.name.trim().is_empty() {
-            self.modal = Modal::Error("topic name required".into());
+    // Validation failures keep the form open with an inline message: a
+    // dismiss-with-any-key popup would swallow the next keystroke and drop the
+    // following ones onto the dashboard (on prod, `a` = add partitions).
+
+    fn submit_create(&mut self, mut f: CreateForm) {
+        let partitions = f.partitions.trim().parse::<i32>();
+        let replication = f.replication.trim().parse::<i32>();
+        let err = if f.name.trim().is_empty() {
+            Some("topic name required".to_string())
+        } else if !matches!(partitions, Ok(1..)) {
+            Some("partitions must be a number ≥ 1".to_string())
+        } else if !matches!(replication, Ok(1..)) {
+            Some("replication must be a number ≥ 1".to_string())
+        } else if self.brokers > 0
+            && replication
+                .as_ref()
+                .is_ok_and(|r| *r as usize > self.brokers)
+        {
+            Some(format!(
+                "replication can't exceed the {} broker(s) in this cluster",
+                self.brokers
+            ))
+        } else {
+            None
+        };
+        if err.is_some() {
+            f.error = err;
+            self.modal = Modal::Create(f);
             return;
         }
-        let partitions: i32 = f.partitions.trim().parse().unwrap_or(1);
-        let replication: i32 = f.replication.trim().parse().unwrap_or(3);
+        let (partitions, replication) = (partitions.unwrap_or(1), replication.unwrap_or(1));
         self.status = format!("creating {}…", f.name.trim());
         self.worker.send(Cmd::Create {
             name: f.name.trim().to_string(),
@@ -978,11 +1150,24 @@ impl App {
         });
     }
 
-    fn submit_add_partitions(&mut self, f: &PartForm) {
-        let Ok(total) = f.total.trim().parse::<usize>() else {
-            self.modal = Modal::Error("partition count must be a number".into());
-            return;
+    fn submit_add_partitions(&mut self, mut f: PartForm) {
+        let total = f.total.trim().parse::<usize>().unwrap_or(0);
+        let err = if total <= f.current {
+            Some(format!(
+                "enter a total above the current {} (partitions can only increase)",
+                f.current
+            ))
+        } else if f.is_prod && f.confirm.trim() != f.topic {
+            f.focus = 1;
+            Some("PROD: type the topic name to confirm".to_string())
+        } else {
+            None
         };
+        if err.is_some() {
+            f.error = err;
+            self.modal = Modal::AddPartitions(f);
+            return;
+        }
         self.status = format!("adding partitions to {}…", f.topic);
         self.worker.send(Cmd::AddPartitions {
             name: f.topic.clone(),
@@ -990,11 +1175,12 @@ impl App {
         });
     }
 
-    fn submit_delete(&mut self, f: &DeleteForm) {
+    fn submit_delete(&mut self, mut f: DeleteForm) {
         // Prod guardrail applies to both topics and groups: the typed
         // confirmation must match the target name.
         if f.is_prod && f.confirm.trim() != f.target {
-            self.modal = Modal::Error("confirmation text did not match the name".into());
+            f.error = Some("confirmation text did not match the name".into());
+            self.modal = Modal::Delete(f);
             return;
         }
         match f.kind {
@@ -1010,21 +1196,105 @@ impl App {
     }
 }
 
-/// UTC HH:MM:SS for activity-log timestamps (no chrono dependency).
+/// Local-time HH:MM:SS for activity-log timestamps.
 fn now_hms() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let s = SystemTime::now()
+    let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("{:02}:{:02}:{:02}", (s / 3600) % 24, (s / 60) % 60, s % 60)
+        .map_or(0, |d| d.as_millis() as i64);
+    local_time(ms, false)
 }
 
+/// Epoch milliseconds → local `HH:MM:SS`, or `YYYY-MM-DD HH:MM:SS` with
+/// `date` (no chrono dependency; libc is already linked).
+pub fn local_time(epoch_ms: i64, date: bool) -> String {
+    let t = epoch_ms.div_euclid(1000) as libc::time_t;
+    // SAFETY: localtime_r only writes into the zeroed `tm` we own.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_r(&t, &mut tm) };
+    let hms = format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec);
+    if date {
+        format!(
+            "{:04}-{:02}-{:02} {hms}",
+            tm.tm_year + 1900,
+            tm.tm_mon + 1,
+            tm.tm_mday
+        )
+    } else {
+        hms
+    }
+}
+
+/// Clipboard: `pbcopy` on macOS; elsewhere the OSC 52 terminal escape, which
+/// also works over SSH (iTerm2, kitty, WezTerm, Windows Terminal, tmux with
+/// `set-clipboard on`) - the usual way kitz is run on a bastion.
 fn copy_to_clipboard(text: &str) -> std::result::Result<(), String> {
-    let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    cb.set_text(text.to_string()).map_err(|e| e.to_string())
+    use std::io::Write;
+    if cfg!(target_os = "macos") {
+        let mut child = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("pbcopy: {e}"))?;
+        child
+            .stdin
+            .take()
+            .ok_or("pbcopy: no stdin")?
+            .write_all(text.as_bytes())
+            .map_err(|e| e.to_string())?;
+        return match child.wait() {
+            Ok(s) if s.success() => Ok(()),
+            Ok(s) => Err(format!("pbcopy exited with {s}")),
+            Err(e) => Err(e.to_string()),
+        };
+    }
+    let mut out = std::io::stdout();
+    write!(out, "\x1b]52;c;{}\x07", base64(text.as_bytes()))
+        .and_then(|()| out.flush())
+        .map_err(|e| e.to_string())
+}
+
+/// Standard base64 (for OSC 52); std has none and it's 15 lines.
+fn base64(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for c in bytes.chunks(3) {
+        let n = (c[0] as u32) << 16
+            | (*c.get(1).unwrap_or(&0) as u32) << 8
+            | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            s.push(if i <= c.len() {
+                T[(n >> (18 - 6 * i) & 63) as usize] as char
+            } else {
+                '='
+            });
+        }
+    }
+    s
 }
 
 // crossterm's KeyCode::Tab collides with our `Tab_` usage in match arms after
 // the `use KeyCode::*` glob; alias it. (BackTab comes from the glob.)
-use crossterm::event::KeyCode::Tab as Tab_;
+use ratatui::crossterm::event::KeyCode::Tab as Tab_;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn base64_matches_rfc4648_vectors() {
+        for (i, o) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foob", "Zm9vYg=="),
+        ] {
+            assert_eq!(super::base64(i.as_bytes()), o);
+        }
+    }
+
+    #[test]
+    fn local_time_formats_epoch_ms() {
+        let s = super::local_time(1_791_020_372_134, true);
+        assert!(s.starts_with("2026-10-0"), "{s}");
+        assert_eq!(s.len(), "2026-10-03 09:39:32".len());
+    }
+}

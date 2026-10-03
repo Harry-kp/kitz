@@ -9,7 +9,7 @@
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::config::EnvProfile;
-use crate::kafka::{EventRecord, GroupSummary, KafkaClient, TopicMeta};
+use crate::kafka::{EventRecord, GroupSummary, KafkaClient, PartitionLag, TopicMeta};
 
 /// Requests from the UI to the worker.
 pub enum Cmd {
@@ -18,6 +18,9 @@ pub enum Cmd {
     Watermarks(String),
     TopicConfig(String),
     Groups,
+    /// Committed offsets + lag for one group (the UI asks one at a time so
+    /// other requests interleave instead of waiting behind every group).
+    GroupLag(String),
     Peek(String),
     Create {
         name: String,
@@ -38,6 +41,7 @@ pub enum Evt {
     Connected {
         profile: EnvProfile,
         meta: Vec<TopicMeta>,
+        brokers: usize,
     },
     ConnectFailed(String),
     Topics(Vec<TopicMeta>),
@@ -50,7 +54,12 @@ pub enum Evt {
         entries: Vec<(String, String)>,
     },
     Groups(Vec<GroupSummary>),
+    GroupLag {
+        group: String,
+        parts: Vec<PartitionLag>,
+    },
     Peek {
+        topic: String,
         records: Vec<EventRecord>,
     },
     /// A mutation (create/delete/+partitions) or refresh succeeded.
@@ -90,19 +99,26 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
         match cmd {
             Cmd::Connect(profile) => match KafkaClient::connect(&profile) {
                 Ok(c) => {
-                    let meta = c.metadata();
+                    let (meta, brokers) = (c.metadata(), c.brokers);
                     client = Some(c);
-                    send(evt, Evt::Connected { profile, meta });
+                    send(
+                        evt,
+                        Evt::Connected {
+                            profile,
+                            meta,
+                            brokers,
+                        },
+                    );
                 }
-                Err(e) => send(evt, Evt::ConnectFailed(format!("{e:#}"))),
+                Err(e) => send(evt, Evt::ConnectFailed(connect_error(&e, &profile))),
             },
 
-            Cmd::RefreshTopics => with_client_mut(&mut client, evt, |c| {
+            Cmd::RefreshTopics => with_client(&mut client, evt, |c| {
                 c.reload_meta()?;
                 Ok(Evt::Topics(c.metadata()))
             }),
 
-            Cmd::Watermarks(topic) => with_client(&client, evt, |c| {
+            Cmd::Watermarks(topic) => with_client(&mut client, evt, |c| {
                 let marks = c.watermarks(&topic)?;
                 Ok(Evt::Watermarks { topic, marks })
             }),
@@ -113,16 +129,25 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                 if let Some(c) = &client {
                     let entries = c
                         .topic_config(&topic)
-                        .unwrap_or_else(|e| vec![("(unavailable)".into(), format!("{e:#}"))]);
+                        .unwrap_or_else(|e| vec![("(unavailable)".into(), err_text(&e))]);
                     send(evt, Evt::TopicConfig { topic, entries });
                 }
             }
 
-            Cmd::Groups => with_client(&client, evt, |c| Ok(Evt::Groups(c.consumer_groups()?))),
+            Cmd::Groups => with_client(&mut client, evt, |c| Ok(Evt::Groups(c.consumer_groups()?))),
 
-            Cmd::Peek(topic) => with_client(&client, evt, |c| {
+            // Lag failures (e.g. no Describe ACL on one group) just mean "no
+            // data" for that group - reported as empty, not as an error toast.
+            Cmd::GroupLag(group) => {
+                if let Some(c) = &client {
+                    let parts = c.group_lag(&group).unwrap_or_default();
+                    send(evt, Evt::GroupLag { group, parts });
+                }
+            }
+
+            Cmd::Peek(topic) => with_client(&mut client, evt, |c| {
                 let records = c.peek(&topic, 50)?;
-                Ok(Evt::Peek { records })
+                Ok(Evt::Peek { topic, records })
             }),
 
             Cmd::Create {
@@ -144,7 +169,7 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
                 |c| c.add_partitions(&name, total),
             ),
 
-            Cmd::DeleteGroup(name) => with_client(&client, evt, |c| {
+            Cmd::DeleteGroup(name) => with_client(&mut client, evt, |c| {
                 c.delete_group(&name)?;
                 // Re-list groups so the view reflects the deletion.
                 send(evt, Evt::Ok(format!("deleted group {name}")));
@@ -156,25 +181,41 @@ fn run(cmd_rx: &Receiver<Cmd>, evt: &Sender<Evt>) {
     }
 }
 
+/// Error chain joined with ": ", skipping links already in the text (rdkafka
+/// errors repeat their source code in their own message).
+fn err_text(e: &anyhow::Error) -> String {
+    let mut out = String::new();
+    for link in e.chain().map(|c| c.to_string()) {
+        if !out.contains(&link) {
+            if !out.is_empty() {
+                out.push_str(": ");
+            }
+            out.push_str(&link);
+        }
+    }
+    out
+}
+
+/// Connect errors plus the one thing to try next when brokers are unreachable.
+fn connect_error(e: &anyhow::Error, env: &EnvProfile) -> String {
+    let mut text = err_text(e);
+    if let Some(warning) = env.port_mismatch() {
+        text.push_str(&format!("\n\n⚠ {warning}"));
+    }
+    if text.contains("BrokerTransportFailure") {
+        text.push_str(&format!(
+            "\n\nBrokers unreachable - check VPN/routing. Run `kitz doctor {}` for a step-by-step check.",
+            env.name
+        ));
+    }
+    text
+}
+
 fn send(evt: &Sender<Evt>, e: Evt) {
     let _ = evt.send(e);
 }
 
 fn with_client(
-    client: &Option<KafkaClient>,
-    evt: &Sender<Evt>,
-    f: impl FnOnce(&KafkaClient) -> anyhow::Result<Evt>,
-) {
-    let Some(c) = client else {
-        return send(evt, Evt::Failed("not connected".into()));
-    };
-    match f(c) {
-        Ok(e) => send(evt, e),
-        Err(e) => send(evt, Evt::Failed(format!("{e:#}"))),
-    }
-}
-
-fn with_client_mut(
     client: &mut Option<KafkaClient>,
     evt: &Sender<Evt>,
     f: impl FnOnce(&mut KafkaClient) -> anyhow::Result<Evt>,
@@ -184,7 +225,7 @@ fn with_client_mut(
     };
     match f(c) {
         Ok(e) => send(evt, e),
-        Err(e) => send(evt, Evt::Failed(format!("{e:#}"))),
+        Err(e) => send(evt, Evt::Failed(err_text(&e))),
     }
 }
 
@@ -204,6 +245,27 @@ fn mutate(
             send(evt, Evt::Ok(ok_msg));
             send(evt, Evt::Topics(c.metadata()));
         }
-        Err(e) => send(evt, Evt::Failed(format!("{e:#}"))),
+        Err(e) => send(evt, Evt::Failed(err_text(&e))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn err_text_skips_repeated_sources_and_hints_on_transport_failure() {
+        let e = anyhow::Error::from(rdkafka::error::KafkaError::MetadataFetch(
+            rdkafka::types::RDKafkaErrorCode::BrokerTransportFailure,
+        ))
+        .context("fetching metadata");
+        let text = err_text(&e);
+        assert_eq!(text.matches("BrokerTransportFailure").count(), 1, "{text}");
+        assert!(text.starts_with("fetching metadata: "));
+        let env: EnvProfile =
+            toml::from_str("name='stag'\nbootstrap='b:9092'\nregion='r'\nauth='iam'").unwrap();
+        let msg = connect_error(&e, &env);
+        assert!(msg.contains("kitz doctor stag"), "{msg}");
+        assert!(msg.contains("port 9092"), "{msg}");
     }
 }

@@ -6,8 +6,6 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -19,7 +17,7 @@ use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{BaseConsumer, Consumer, ConsumerContext};
 use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
 
-use crate::config::EnvProfile;
+use crate::config::{Auth, EnvProfile};
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -31,9 +29,11 @@ const TIMEOUT: Duration = Duration::from_secs(15);
 #[derive(Clone)]
 pub struct PartMeta {
     pub id: i32,
-    pub leader: i32,
     pub replicas: usize,
     pub isr: usize,
+    /// Offsets: -1 until watermarks are loaded (only for the selected topic).
+    pub low: i64,
+    pub high: i64,
 }
 
 #[derive(Clone)]
@@ -42,22 +42,9 @@ pub struct TopicMeta {
     pub partitions: Vec<PartMeta>,
 }
 
-pub struct PartitionInfo {
-    pub id: i32,
-    /// Leader broker id - kept for a future leader-skew view (not shown in the
-    /// compact narrow Detail table).
-    #[allow(dead_code)]
-    pub leader: i32,
-    pub replicas: usize,
-    pub isr: usize,
-    /// -1 until watermarks are loaded on demand.
-    pub low: i64,
-    pub high: i64,
-}
-
 pub struct TopicDetail {
     pub name: String,
-    pub partitions: Vec<PartitionInfo>,
+    pub partitions: Vec<PartMeta>,
     /// False until `load_watermarks` fills low/high + event counts.
     pub watermarks_loaded: bool,
 }
@@ -79,13 +66,28 @@ pub struct GroupSummary {
     pub topics: Vec<String>,
 }
 
+/// A consumer group's position on one partition.
+#[derive(Clone)]
+pub struct PartitionLag {
+    pub topic: String,
+    pub partition: i32,
+    /// Next offset the group will read (its committed offset).
+    pub committed: i64,
+    /// Next offset to be written (high watermark).
+    pub end: i64,
+}
+
+impl PartitionLag {
+    pub fn lag(&self) -> i64 {
+        (self.end - self.committed).max(0)
+    }
+}
+
 pub struct EventRecord {
     pub partition: i32,
     pub offset: i64,
     pub key: String,
     pub payload: String,
-    /// Kept for a future timestamp column in the peek view.
-    #[allow(dead_code)]
     pub timestamp: Option<i64>,
 }
 
@@ -94,9 +96,6 @@ pub struct EventRecord {
 #[derive(Clone)]
 pub struct MskContext {
     region: String,
-    /// Where librdkafka log lines go. `Some(file)` in the TUI (so logs can't
-    /// corrupt the screen); `None` in `doctor` mode (straight to stderr).
-    log_file: Option<Arc<Mutex<File>>>,
 }
 
 impl ClientContext for MskContext {
@@ -116,18 +115,6 @@ impl ClientContext for MskContext {
             lifetime_ms: expiry_ms,
         })
     }
-
-    fn log(&self, level: RDKafkaLogLevel, fact: &str, log_message: &str) {
-        let line = format!("[rdkafka {level:?}] {fact}: {log_message}");
-        match &self.log_file {
-            Some(f) => {
-                if let Ok(mut g) = f.lock() {
-                    let _ = writeln!(g, "{line}");
-                }
-            }
-            None => eprintln!("{line}"),
-        }
-    }
 }
 
 impl ConsumerContext for MskContext {}
@@ -144,6 +131,8 @@ pub struct KafkaClient {
     /// ops. Reading it is free (no network) - that's what keeps navigation
     /// instant.
     meta: Vec<TopicMeta>,
+    /// Broker count from the same fetch; caps the default replication factor.
+    pub brokers: usize,
 }
 
 impl KafkaClient {
@@ -156,26 +145,27 @@ impl KafkaClient {
         let debug = std::env::var("KITZ_DEBUG").is_ok();
         let ctx = MskContext {
             region: profile.region.clone(),
-            log_file: open_log_file(),
         };
 
         let consumer: BaseConsumer<MskContext> = base_config(profile, debug)
             .create_with_context(ctx.clone())
             .context("creating consumer")?;
-        // Poll once so the OAuth callback fires and the connection warms up.
-        consumer.poll(Duration::from_secs(5));
+        // IAM only: poll once so the OAuth token callback fires before the
+        // first request. Without IAM this is a flat 5s wait for nothing.
+        if profile.auth == Auth::Iam {
+            consumer.poll(Duration::from_secs(5));
+        }
 
         let admin: AdminClient<MskContext> = base_config(profile, debug)
             .create_with_context(ctx.clone())
             .context("creating admin client")?;
 
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
+        let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .context("building admin runtime")?;
 
-        let meta = fetch_meta(&consumer)?;
+        let (meta, brokers) = fetch_meta(&consumer)?;
 
         Ok(Self {
             profile: profile.clone(),
@@ -184,12 +174,13 @@ impl KafkaClient {
             admin,
             rt,
             meta,
+            brokers,
         })
     }
 
     /// Re-fetch cluster metadata (after create/delete/add-partitions).
     pub fn reload_meta(&mut self) -> Result<()> {
-        self.meta = fetch_meta(&self.consumer)?;
+        (self.meta, self.brokers) = fetch_meta(&self.consumer)?;
         Ok(())
     }
 
@@ -353,7 +344,50 @@ impl KafkaClient {
         check_results(res)
     }
 
-    /// Peek the last `limit` events across a topic's partitions.
+    /// Committed offsets + lag for `group` on every partition it has committed
+    /// to: one OffsetFetch covering all cluster partitions (so idle groups with
+    /// no members still show up), then a watermark round-trip per committed
+    /// partition.
+    // ponytail: one OffsetFetch over every partition per group; for clusters with
+    // tens of thousands of partitions switch to ListConsumerGroupOffsets (librdkafka
+    // admin API, not wrapped by rdkafka 0.36).
+    pub fn group_lag(&self, group: &str) -> Result<Vec<PartitionLag>> {
+        let c: BaseConsumer<MskContext> = base_config(&self.profile, false)
+            .set("group.id", group)
+            .set("enable.auto.commit", "false")
+            .create_with_context(self.ctx.clone())
+            .context("creating offsets consumer")?;
+        if self.profile.auth == Auth::Iam {
+            c.poll(Duration::from_millis(500)); // let the OAuth callback fire
+        }
+        let mut tpl = TopicPartitionList::new();
+        for t in &self.meta {
+            for p in &t.partitions {
+                tpl.add_partition(&t.name, p.id);
+            }
+        }
+        let committed = c
+            .committed_offsets(tpl, TIMEOUT)
+            .with_context(|| format!("fetching offsets for {group}"))?;
+        let mut out = Vec::new();
+        for e in committed.elements() {
+            if let Offset::Offset(off) = e.offset() {
+                let (_, end) = self
+                    .consumer
+                    .fetch_watermarks(e.topic(), e.partition(), TIMEOUT)
+                    .unwrap_or((0, off));
+                out.push(PartitionLag {
+                    topic: e.topic().to_string(),
+                    partition: e.partition(),
+                    committed: off,
+                    end,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// The latest `limit` messages of a topic, newest first.
     pub fn peek(&self, topic: &str, limit: usize) -> Result<Vec<EventRecord>> {
         let debug = std::env::var("KITZ_DEBUG").is_ok();
         let peeker: BaseConsumer<MskContext> = base_config(&self.profile, debug)
@@ -361,7 +395,9 @@ impl KafkaClient {
             .set("enable.auto.commit", "false")
             .create_with_context(self.ctx.clone())
             .context("creating peek consumer")?;
-        peeker.poll(Duration::from_secs(5));
+        if self.profile.auth == Auth::Iam {
+            peeker.poll(Duration::from_secs(5)); // let the OAuth callback fire
+        }
 
         let md = self.consumer.fetch_metadata(Some(topic), TIMEOUT)?;
         let topic_md = md.topics().first().context("topic not found")?;
@@ -399,7 +435,14 @@ impl KafkaClient {
                 None => empty_polls += 1,
             }
         }
-        out.sort_by(|a, b| a.partition.cmp(&b.partition).then(a.offset.cmp(&b.offset)));
+        // Newest first, the way people read a log. Messages without a
+        // timestamp sort last.
+        out.sort_by(|a, b| {
+            b.timestamp
+                .cmp(&a.timestamp)
+                .then(a.partition.cmp(&b.partition))
+                .then(b.offset.cmp(&a.offset))
+        });
         Ok(out)
     }
 }
@@ -452,8 +495,9 @@ fn parse_topic_strings(bytes: &[u8], with_partitions: bool) -> Vec<String> {
     out
 }
 
-/// One cluster-wide metadata fetch → owned, Send-safe topic/partition structs.
-fn fetch_meta(consumer: &BaseConsumer<MskContext>) -> Result<Vec<TopicMeta>> {
+/// One cluster-wide metadata fetch → owned, Send-safe topic/partition structs
+/// plus the broker count.
+fn fetch_meta(consumer: &BaseConsumer<MskContext>) -> Result<(Vec<TopicMeta>, usize)> {
     let md = consumer
         .fetch_metadata(None, TIMEOUT)
         .context("fetching metadata")?;
@@ -467,9 +511,10 @@ fn fetch_meta(consumer: &BaseConsumer<MskContext>) -> Result<Vec<TopicMeta>> {
                 .iter()
                 .map(|p| PartMeta {
                     id: p.id(),
-                    leader: p.leader(),
                     replicas: p.replicas().len(),
                     isr: p.isr().len(),
+                    low: -1,
+                    high: -1,
                 })
                 .collect();
             partitions.sort_by_key(|p| p.id);
@@ -480,7 +525,7 @@ fn fetch_meta(consumer: &BaseConsumer<MskContext>) -> Result<Vec<TopicMeta>> {
         })
         .collect();
     topics.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(topics)
+    Ok((topics, md.brokers().len()))
 }
 
 /// Client config for the env's declared wire protocol.
@@ -488,18 +533,18 @@ fn base_config(profile: &EnvProfile, debug: bool) -> ClientConfig {
     let mut cfg = ClientConfig::new();
     cfg.set("bootstrap.servers", &profile.bootstrap);
 
-    match profile.auth.as_str() {
-        "plaintext" => {
+    match profile.auth {
+        Auth::Plaintext => {
             cfg.set("security.protocol", "PLAINTEXT");
         }
-        "tls" | "ssl" => {
+        Auth::Tls => {
             cfg.set("security.protocol", "SSL");
             if let Some(ca) = ca_bundle() {
                 cfg.set("ssl.ca.location", ca);
             }
         }
-        // "iam" (default): SASL_SSL + MSK IAM via the OAUTHBEARER token callback.
-        _ => {
+        // SASL_SSL + MSK IAM via the OAUTHBEARER token callback.
+        Auth::Iam => {
             cfg.set("security.protocol", "SASL_SSL")
                 .set("sasl.mechanisms", "OAUTHBEARER");
             // librdkafka with vendored OpenSSL on macOS often can't find the
@@ -531,26 +576,41 @@ fn ca_bundle() -> Option<String> {
         .map(|s| (*s).to_string())
 }
 
-fn log_path() -> Option<PathBuf> {
+/// `~/Library/Caches/kitz/kitz.log` (or the OS cache dir), opened for append.
+pub fn open_log_file() -> Option<File> {
     let dir = dirs::cache_dir()?.join("kitz");
     std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join("kitz.log"))
-}
-
-fn open_log_file() -> Option<Arc<Mutex<File>>> {
-    let path = log_path()?;
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(path)
+        .open(dir.join("kitz.log"))
         .ok()
-        .map(|f| Arc::new(Mutex::new(f)))
 }
 
 fn check_results<T>(results: Vec<Result<T, (T, rdkafka::types::RDKafkaErrorCode)>>) -> Result<()> {
     for r in results {
         if let Err((_, code)) = r {
-            return Err(anyhow::anyhow!("kafka admin error: {code:?}"));
+            use rdkafka::types::RDKafkaErrorCode as E;
+            let hint = match code {
+                E::NonEmptyGroup => "group still has active members - stop its consumers first",
+                E::InvalidReplicationFactor => {
+                    "replication factor is larger than the number of brokers"
+                }
+                E::InvalidPartitions => "partition count can only increase",
+                E::TopicAlreadyExists => "a topic with that name already exists",
+                E::InvalidTopic => "invalid topic name (letters, digits, . _ - only)",
+                E::TopicAuthorizationFailed
+                | E::GroupAuthorizationFailed
+                | E::ClusterAuthorizationFailed => {
+                    "not authorized - check the IAM policy for this principal"
+                }
+                _ => "",
+            };
+            return Err(if hint.is_empty() {
+                anyhow::anyhow!("kafka admin error: {code:?}")
+            } else {
+                anyhow::anyhow!("{hint} ({code:?})")
+            });
         }
     }
     Ok(())
@@ -560,46 +620,72 @@ fn check_results<T>(results: Vec<Result<T, (T, rdkafka::types::RDKafkaErrorCode)
 
 /// Prints a step-by-step diagnosis to stdout/stderr (no TUI). Isolates the
 /// three failure layers: TCP reachability, IAM token generation, and the full
-/// librdkafka SASL_SSL handshake with verbose debug logs.
-pub fn doctor(profile: &EnvProfile) {
+/// librdkafka handshake with verbose debug logs. Returns false if any failed.
+pub fn doctor(profile: &EnvProfile) -> bool {
     println!("kitz doctor");
-    println!("  env       : {}", profile.name);
-    println!("  auth      : {}", profile.auth);
-    println!("  region    : {}", profile.region);
-    println!("  bootstrap : {}", profile.bootstrap);
-    println!("  aws_profile: {:?}", profile.aws_profile);
-    println!("  ca bundle : {:?}", ca_bundle());
+    println!("  env         : {}", profile.name);
+    println!("  auth        : {}", profile.auth.as_str());
+    println!("  region      : {}", profile.region);
+    println!("  bootstrap   : {}", profile.bootstrap);
+    println!(
+        "  aws_profile : {}",
+        profile
+            .aws_profile
+            .as_deref()
+            .unwrap_or("(default credential chain)")
+    );
+    println!(
+        "  ca bundle   : {}",
+        ca_bundle().unwrap_or_else(|| "(none found)".into())
+    );
+    if let Some(warning) = profile.port_mismatch() {
+        println!("  ⚠ {warning}");
+    }
     if let Some(p) = &profile.aws_profile {
         std::env::set_var("AWS_PROFILE", p);
     }
+    let mut ok = true;
 
     println!("\n[1/3] TCP reachability (are the brokers routable from here?)");
+    let mut reachable = false;
     for hostport in profile.bootstrap.split(',') {
         let hp = hostport.trim();
         print!("      {hp} … ");
         let _ = std::io::stdout().flush();
         match tcp_check(hp) {
-            Ok(ms) => println!("OK ({ms} ms)"),
-            Err(e) => println!("FAIL: {e}"),
+            Ok(ms) => {
+                reachable = true;
+                println!("OK ({ms} ms)");
+            }
+            Err(e) => {
+                ok = false;
+                println!("FAIL: {e}");
+            }
         }
     }
 
     println!("\n[2/3] AWS IAM token generation (are your ~/.aws creds usable?)");
-    if profile.auth == "iam" {
+    if profile.auth == Auth::Iam {
         print!("      generate_auth_token({}) … ", profile.region);
         let _ = std::io::stdout().flush();
         match gen_token(&profile.region) {
             Ok(len) => println!("OK ({len} byte token)"),
-            Err(e) => println!("FAIL: {e}"),
+            Err(e) => {
+                ok = false;
+                println!("FAIL: {e}");
+            }
         }
     } else {
-        println!("      skipped (auth = {}, not IAM)", profile.auth);
+        println!("      skipped (auth = {}, not IAM)", profile.auth.as_str());
     }
 
-    println!("\n[3/3] Full SASL_SSL handshake + metadata (verbose librdkafka log below)");
+    println!("\n[3/3] Kafka handshake + metadata (verbose librdkafka log below)");
+    if !reachable {
+        println!("      skipped (no broker reachable - fix step 1 first)");
+        return false;
+    }
     let ctx = MskContext {
         region: profile.region.clone(),
-        log_file: None, // → stderr, so you see the handshake live
     };
     let consumer: BaseConsumer<MskContext> = match base_config(profile, true)
         .set_log_level(RDKafkaLogLevel::Debug)
@@ -608,14 +694,18 @@ pub fn doctor(profile: &EnvProfile) {
         Ok(c) => c,
         Err(e) => {
             println!("      client create FAIL: {e}");
-            return;
+            return false;
         }
     };
     consumer.poll(Duration::from_secs(3));
     match consumer.fetch_metadata(None, Duration::from_secs(15)) {
         Ok(md) => println!("\n  ✓ metadata OK - {} topics", md.topics().len()),
-        Err(e) => println!("\n  ✗ metadata FAIL: {e}"),
+        Err(e) => {
+            ok = false;
+            println!("\n  ✗ metadata FAIL: {e}");
+        }
     }
+    ok
 }
 
 fn tcp_check(hostport: &str) -> std::result::Result<u128, String> {
@@ -641,4 +731,24 @@ fn gen_token(region: &str) -> std::result::Result<usize, String> {
     rt.block_on(generate_auth_token(Region::new(region.to_string())))
         .map(|(t, _)| t.len())
         .map_err(|e| format!("{e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// MSK IAM needs SASL_SSL + OAUTHBEARER compiled into librdkafka; client
+    /// creation fails ("no provider for SASL mechanism") if a build drops it.
+    #[test]
+    fn iam_client_config_is_supported_by_this_build() {
+        let profile: EnvProfile =
+            toml::from_str("name='t'\nbootstrap='127.0.0.1:1'\nregion='eu-central-1'\nauth='iam'")
+                .unwrap();
+        let ctx = MskContext {
+            region: profile.region.clone(),
+        };
+        let c: Result<BaseConsumer<MskContext>, _> =
+            base_config(&profile, false).create_with_context(ctx);
+        assert!(c.is_ok(), "{:?}", c.err());
+    }
 }

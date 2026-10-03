@@ -3,7 +3,7 @@
 All notable changes to kitz are documented here. Managed by
 [release-plz](https://release-plz.dev) from conventional commits.
 
-## [Unreleased]
+## [0.1.0] - 2026-07-19
 
 - Initial release: IAM-native MSK terminal UI - environment hot-switch,
   bird's-eye dashboard (Topics / Detail ⟷ Config / events graph / logs),

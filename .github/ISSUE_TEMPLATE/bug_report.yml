@@ -1,0 +1,69 @@
+name: Bug report
+description: Something kitz does wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Can't connect? Most connection problems (VPN, ports, IAM credentials) are covered in the
+        [troubleshooting guide](https://github.com/Harry-kp/kitz/blob/main/docs/troubleshooting.md).
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you post
+      options:
+        - label: I searched existing issues, including closed ones.
+          required: true
+        - label: I removed broker hostnames, account IDs and credentials from everything below (or they're not sensitive).
+          required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: "Pressing ↵ on a topic showed ... ; I expected its latest messages."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. kitz stag
+        2. select topic orders.v1, press ↵
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: kitz version and install method
+      placeholder: "kitz 0.2.0 via brew (output of `kitz --version`)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Cluster auth
+      options: [iam, tls, plaintext]
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `kitz doctor <env>`
+      description: Run it against the environment where the bug happens.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Last lines of `~/Library/Caches/kitz/kitz.log`, screenshots, whether it happens every time.
