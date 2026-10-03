@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -19,9 +23,7 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    # macOS: clippy compiles the crate (librdkafka + libsasl2), which needs the
-    # macOS toolchain — same reason as the test job.
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
