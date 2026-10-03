@@ -26,13 +26,7 @@ use crate::config::Config;
 /// live topic / consumer-group inspection. Run with no arguments to launch the
 /// TUI. Config is read from ./kitz.toml or ~/.config/kitz/config.toml.
 #[derive(Parser)]
-#[command(
-    name = "kitz",
-    version,
-    about,
-    long_about = None,
-    args_conflicts_with_subcommands = true
-)]
+#[command(name = "kitz", version, about, long_about = None)]
 struct Cli {
     /// Config file to use instead of ./kitz.toml / ~/.config/kitz/config.toml.
     #[arg(long, short, global = true, value_name = "PATH")]
@@ -90,6 +84,11 @@ fn main() -> Result<()> {
                 Some(name) => Some(config.env_index(name)?),
                 None => (config.envs.len() == 1).then_some(0),
             };
+            use std::io::IsTerminal;
+            anyhow::ensure!(
+                std::io::stdout().is_terminal(),
+                "kitz needs an interactive terminal (for scripts and CI use `kitz doctor`)"
+            );
             let restore_stderr = stderr_to_log_file();
             let mut app = App::new(config);
             if let Some(i) = start {
@@ -146,4 +145,27 @@ fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {
     }
     app.shutdown();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::try_parse_from(std::iter::once("kitz").chain(args.iter().copied())).unwrap()
+    }
+
+    #[test]
+    fn env_argument_and_subcommands_coexist_with_global_config() {
+        let c = parse(&["-c", "k.toml", "doctor", "stag"]);
+        assert!(matches!(c.command, Some(Command::Doctor { env: Some(ref e) }) if e == "stag"));
+        assert_eq!(c.config.as_deref(), Some(std::path::Path::new("k.toml")));
+        let c = parse(&["-c", "k.toml", "stag"]);
+        assert_eq!(c.env.as_deref(), Some("stag"));
+        assert!(c.command.is_none());
+        assert!(matches!(
+            parse(&["init"]).command,
+            Some(Command::Init { force: false })
+        ));
+    }
 }
