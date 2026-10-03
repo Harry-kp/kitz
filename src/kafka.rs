@@ -31,7 +31,6 @@ const TIMEOUT: Duration = Duration::from_secs(15);
 #[derive(Clone)]
 pub struct PartMeta {
     pub id: i32,
-    pub leader: i32,
     pub replicas: usize,
     pub isr: usize,
 }
@@ -44,10 +43,6 @@ pub struct TopicMeta {
 
 pub struct PartitionInfo {
     pub id: i32,
-    /// Leader broker id - kept for a future leader-skew view (not shown in the
-    /// compact narrow Detail table).
-    #[allow(dead_code)]
-    pub leader: i32,
     pub replicas: usize,
     pub isr: usize,
     /// -1 until watermarks are loaded on demand.
@@ -84,8 +79,6 @@ pub struct EventRecord {
     pub offset: i64,
     pub key: String,
     pub payload: String,
-    /// Kept for a future timestamp column in the peek view.
-    #[allow(dead_code)]
     pub timestamp: Option<i64>,
 }
 
@@ -467,7 +460,6 @@ fn fetch_meta(consumer: &BaseConsumer<MskContext>) -> Result<Vec<TopicMeta>> {
                 .iter()
                 .map(|p| PartMeta {
                     id: p.id(),
-                    leader: p.leader(),
                     replicas: p.replicas().len(),
                     isr: p.isr().len(),
                 })

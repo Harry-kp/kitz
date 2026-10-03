@@ -1365,7 +1365,6 @@ mod tests {
                 partitions: (0..(3 + i % 4))
                     .map(|id| PartMeta {
                         id,
-                        leader: 1 + id % 3,
                         replicas: 3,
                         isr: 3,
                     })
@@ -1378,7 +1377,6 @@ mod tests {
             partitions: (0..4)
                 .map(|id| PartitionInfo {
                     id,
-                    leader: 1 + id % 3,
                     replicas: 3,
                     isr: 3,
                     low: 0,

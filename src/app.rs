@@ -422,7 +422,6 @@ impl App {
                 .iter()
                 .map(|p| PartitionInfo {
                     id: p.id,
-                    leader: p.leader,
                     replicas: p.replicas,
                     isr: p.isr,
                     low: -1,
