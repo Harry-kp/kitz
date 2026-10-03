@@ -741,10 +741,9 @@ mod tests {
     /// creation fails ("no provider for SASL mechanism") if a build drops it.
     #[test]
     fn iam_client_config_is_supported_by_this_build() {
-        let profile: EnvProfile = toml::from_str(
-            "name='t'\nbootstrap='127.0.0.1:1'\nregion='eu-central-1'\nauth='iam'",
-        )
-        .unwrap();
+        let profile: EnvProfile =
+            toml::from_str("name='t'\nbootstrap='127.0.0.1:1'\nregion='eu-central-1'\nauth='iam'")
+                .unwrap();
         let ctx = MskContext {
             region: profile.region.clone(),
         };
