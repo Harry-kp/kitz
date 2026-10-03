@@ -2,18 +2,16 @@
 
 > your Kafka desk clerk
 
-A terminal UI for **AWS MSK** with first-class **IAM auth**, multi-environment
-switching, and live topic / consumer-group inspection. The wedge no other Kafka
-TUI has: kitz authenticates to MSK with your `~/.aws` creds (SASL OAUTHBEARER /
-SigV4) — no broker-string, cert, or JAAS juggling.
-
-> ⚠️ **Work in progress · macOS only for now.** Linux/Windows builds are
-> planned. The prebuilt macOS binary is fully self-contained (librdkafka and
-> OpenSSL are baked in) — nothing to install alongside it.
+A terminal UI for **Kafka** - topics, messages and consumer lag at a glance,
+across all your environments. Built for **AWS MSK**: kitz signs in with your
+`~/.aws` credentials (IAM, SASL OAUTHBEARER) - no cert or JAAS juggling - and
+works just as well with any Kafka over plaintext or TLS.
 
 [![test](https://github.com/Harry-kp/kitz/actions/workflows/test.yml/badge.svg)](https://github.com/Harry-kp/kitz/actions/workflows/test.yml)
 [![crates.io](https://img.shields.io/crates/v/kitz.svg)](https://crates.io/crates/kitz)
 [![license](https://img.shields.io/crates/l/kitz.svg)](./LICENSE)
+
+![kitz demo](https://raw.githubusercontent.com/Harry-kp/kitz/main/assets/demo.gif)
 
 ## Features
 
@@ -46,10 +44,15 @@ brew install Harry-kp/tap/kitz
 
 # curl
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Harry-kp/kitz/releases/latest/download/kitz-installer.sh | sh
+
+# cargo, prebuilt
+cargo binstall kitz
 ```
 
-These ship a self-contained macOS binary - librdkafka and OpenSSL are baked in,
-so there's nothing else to install.
+Prebuilt for **macOS** (Apple Silicon and Intel) and **Linux x86_64**. The
+Linux binary is fully static, so it runs on any distro - including the Amazon
+Linux bastion next to your MSK cluster. librdkafka and OpenSSL are baked in;
+there's nothing else to install. (Windows and Linux ARM aren't built yet.)
 
 **From source (`cargo install`)** compiles librdkafka, so it needs `cmake` +
 Xcode Command Line Tools:
@@ -79,9 +82,11 @@ auth = "plaintext"   # 9092=plaintext · 9094=tls · 9098=iam
 prod = false
 ```
 
-> **Note:** MSK brokers are usually private VPC IPs - run kitz somewhere that
-> can route to them (on the VPC's VPN, or a bastion inside the VPC). Stuck?
-> `kitz doctor <env>` tells you whether it's network, creds, or protocol.
+> **Can't connect?** MSK brokers live on private VPC addresses, so kitz has to
+> run somewhere that can reach them (on a VPN that routes the VPC, or a bastion
+> inside it). `kitz doctor <env>` tells you whether it's the network, your
+> credentials or the port, and the [troubleshooting guide](docs/troubleshooting.md)
+> says what to do about each.
 
 ## Keys
 
@@ -107,6 +112,18 @@ brew install cmake        # macOS
 cargo build --release
 ```
 
+## More
+
+- [Troubleshooting](docs/troubleshooting.md) - connection problems and what `kitz doctor` output means
+- [Security](SECURITY.md) - what kitz does with your credentials and cluster
+- [Contributing](CONTRIBUTING.md) - build, test, and what to discuss before a PR
+
 ## License
 
 MIT © Harry KP
+
+---
+
+Apache Kafka® is a registered trademark of the Apache Software Foundation.
+Amazon MSK and AWS are trademarks of Amazon.com, Inc. or its affiliates. kitz is
+not affiliated with or endorsed by either.

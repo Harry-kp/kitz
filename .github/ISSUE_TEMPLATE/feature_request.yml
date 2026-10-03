@@ -1,0 +1,17 @@
+name: Feature request
+description: Something kitz should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like kitz to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What's the workflow it unblocks?
+      description: What do you do today instead (another tool, a CLI command)?
+    validations:
+      required: true
