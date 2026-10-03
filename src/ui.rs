@@ -180,10 +180,12 @@ fn footer(frame: &mut Frame, area: Rect, lead: Option<&str>, hints: &[(&str, &st
         ));
         spans.push(Span::styled("   ", Style::default().fg(theme::SEPARATOR)));
     }
-    spans.push(Span::styled(
-        format!("│  {status}"),
-        Style::default().fg(theme::ACCENT_LIGHT),
-    ));
+    if !status.is_empty() {
+        spans.push(Span::styled(
+            format!("│  {status}"),
+            Style::default().fg(theme::ACCENT_LIGHT),
+        ));
+    }
     // Transparent (no filled bar) - sits on the app bg.
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(theme::APP_BG)),
@@ -260,17 +262,21 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
                         .add_modifier(Modifier::BOLD),
                 ),
             ];
-            if e.prod {
-                spans.push(Span::styled(
+            // Same-width placeholder keeps the host column aligned.
+            spans.push(if e.prod {
+                Span::styled(
                     " PROD ",
                     Style::default()
                         .fg(theme::PANEL_BG)
                         .bg(theme::ERROR)
                         .add_modifier(Modifier::BOLD),
-                ));
-            }
+                )
+            } else {
+                Span::raw("      ")
+            });
+            // 56 inner cols - "▶ " - "n·" - name(12) - badge(6) - gap(2) = 32.
             spans.push(Span::styled(
-                format!("  {}", host_only(&e.bootstrap)),
+                format!("  {}", truncate(&host_only(&e.bootstrap), 32)),
                 Style::default().fg(theme::TEXT_MUTED),
             ));
             ListItem::new(Line::from(spans))
@@ -293,8 +299,8 @@ fn render_env_select(frame: &mut Frame, app: &mut App) {
         frame,
         Rect::new(fa.x, fa.bottom() - 1, fa.width, 1),
         None,
-        &[("↑↓", "select"), ("↵", "connect"), ("q", "quit")],
-        &format!("v{}", theme::VERSION),
+        &[("↑↓", "select"), ("↵ / 1-9", "connect"), ("q", "quit")],
+        "",
     );
 }
 
