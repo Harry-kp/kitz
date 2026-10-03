@@ -32,7 +32,7 @@ Single binary crate, flat `src/`:
 - UI tests render on a `TestBackend` (see `demo_app()` in `ui.rs`); there is no live-Kafka test.
 - `KeyCode::*` is glob-imported in `app.rs` input handlers, so a type named `Tab` would be shadowed - hence `View` and the `Tab_` alias.
 - ratatui word-wrap drops the line after a whitespace-only line; give empty fields a placeholder.
-- Releases are automated (release-plz + cargo-dist). Don't hand-edit `CHANGELOG.md` or bump the version.
+- Releases are automated (release-plz + cargo-dist). Never bump `version` in Cargo.toml by hand: release-plz publishes any unpublished version on `main` immediately, skipping the release PR and its changelog. Want a minor bump? Use `feat!:` / `BREAKING CHANGE:` in a commit.
 
 ## Working on an issue
 1. Reproduce with a failing test in the `#[cfg(test)] mod tests` of the relevant file.
