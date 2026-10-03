@@ -21,13 +21,16 @@ SigV4) — no broker-string, cert, or JAAS juggling.
   plain-TLS clusters supported too (`auth = "iam" | "tls" | "plaintext"`).
 - **Environment hot-switch** - `1`–`9` to jump between stag / preprod / prod /
   regression without restarting. Prod is tagged red with a delete guardrail.
-- **Bird's-eye dashboard** - Topics, live **Config**/**Detail** (flip with `f`),
-  an incoming-**events graph**, and an activity **Log** - all at once.
-- **Detail** - partitions, ISR/replicas, watermarks, ~event count, and the
-  consumer groups actually subscribed to the topic.
-- **Peek** - browse recent events with pretty-printed JSON; copy payload/key.
-- **Consumer groups** - full-screen view (`G`); delete with confirmation.
-- **Admin** - create topic, add partitions, delete topic/group.
+- **Topics** - pick a topic and everything loads by itself: message count,
+  partitions, replication, live msg/s, retention and limits in plain units,
+  which consumer groups read it and how far behind they are, per-partition
+  offsets. Under-replicated partitions are flagged.
+- **Consumer lag** - every group (idle ones too) with its total lag; the group
+  view breaks it down per partition and warns when nothing is consuming.
+- **Messages** - `↵` on a topic shows the latest messages, newest first, with
+  pretty-printed JSON (key order kept); copy payload or key.
+- **Admin** - create topic, add partitions, delete topic/group, with typed
+  confirmation on prod for anything irreversible.
 - **`kitz doctor <env>`** - layer-by-layer connectivity diagnosis.
 
 ## Install
@@ -59,12 +62,13 @@ cargo install kitz
 ## Quick start
 
 ```sh
-cp kitz.toml.example kitz.toml   # then edit: your brokers, regions, auth
-export AWS_PROFILE=your-profile    # or set aws_profile per-env in the toml
-kitz
+kitz init          # writes a commented starter config to ~/.config/kitz/config.toml
+$EDITOR ~/.config/kitz/config.toml   # your brokers, regions, auth
+kitz               # pick an environment - or `kitz stag` to open one directly
 ```
 
-`kitz.toml` (also read from `~/.config/kitz/config.toml`, or pass `--config <path>`):
+A single-environment config opens straight away. Config is read from
+`./kitz.toml`, then `~/.config/kitz/config.toml`, or `--config <path>`:
 
 ```toml
 [[env]]
@@ -83,17 +87,16 @@ prod = false
 
 | Key | Action |
 |---|---|
-| `1`–`9` / `e` | switch environment |
-| `⇥` / `h` `l` | move focus between panes |
-| `↑↓` / `j` `k` | navigate · `g` jump top |
-| `f` | flip Detail ⟷ Config |
-| `w` | event counts + live graph |
-| `p` | peek events (`y`/`Y` copy) |
-| `y` | copy selected topic name |
-| `/` | filter topics |
-| `c` / `a` / `d` | create / add-partitions / delete topic |
-| `G` | consumer groups |
-| `x` | actions menu · `?` help · `q` quit |
+| `⇥` | switch Topics ⟷ Consumer groups |
+| `↑↓` / `j` `k` | move · `g` / `End` top / bottom · `PgUp` `PgDn` scroll detail |
+| `/` | filter the list · `esc` clears |
+| `↵` | Topics: latest messages (`r` reload, `y`/`Y` copy) · Groups: open its topic |
+| `c` / `a` / `d` | create / add partitions / delete |
+| `y` | copy the selected name |
+| `r` | refresh from the cluster |
+| `1`–`9` / `e` | switch environment / picker |
+| `x` · `L` · `?` | all actions · activity log · help |
+| `q` / `ctrl-c` | quit |
 
 ## Building from source
 

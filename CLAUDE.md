@@ -2,7 +2,7 @@
 
 ## Commands
 - Build: `cargo build --locked`
-- Run TUI: `cargo run --locked` (needs `./kitz.toml` — copy `kitz.toml.example` — or `-- --config <path>`)
+- Run TUI: `cargo run --locked -- [env]` (needs a config: `cargo run -- init`, `./kitz.toml`, or `-- --config <path>`)
 - Connectivity check, no TUI: `cargo run --locked -- doctor [env]`
 - Test (all): `cargo test --locked`
 - Test (one module/test): `cargo test --locked config::` or `cargo test --locked <name>`
@@ -14,7 +14,7 @@ Single binary crate, flat `src/`:
 - `config.rs` — TOML env profiles (`[[env]]`), `Auth` enum. New config fields go here.
 - `kafka.rs` — all librdkafka/MSK IAM calls and the `doctor` command. Blocking.
 - `worker.rs` — background thread; `Cmd` in, `Evt` out. UI never calls `kafka` directly.
-- `app.rs` — state + key handling; `ui.rs` — rendering only (+ smoke tests); `theme.rs` — colors and branding consts.
+- `app.rs` — state + key handling (two views: `View::Topics` / `View::Groups`); `ui.rs` — rendering only (+ smoke/behaviour tests); `theme.rs` — colors and branding consts.
 
 ## Conventions
 - Before writing a helper, grep for one. `ui.rs` already has `truncate`, `fmt_count`, `pretty_json`, `centered`.
@@ -29,7 +29,9 @@ Single binary crate, flat `src/`:
 - librdkafka logs go to stderr; the TUI redirects fd 2 to `~/Library/Caches/kitz/kitz.log` (see `main.rs`). Never `eprintln!` for user-facing TUI messages.
 - Without a config file the binary exits immediately ("no config found"); `--help`/`--version` work without one.
 - `kitz.toml` is gitignored — it holds real broker addresses. Never commit it.
-- UI tests are render smoke tests on a `TestBackend`; there is no live-Kafka test.
+- UI tests render on a `TestBackend` (see `demo_app()` in `ui.rs`); there is no live-Kafka test.
+- `KeyCode::*` is glob-imported in `app.rs` input handlers, so a type named `Tab` would be shadowed - hence `View` and the `Tab_` alias.
+- ratatui word-wrap drops the line after a whitespace-only line; give empty fields a placeholder.
 - Releases are automated (release-plz + cargo-dist). Don't hand-edit `CHANGELOG.md` or bump the version.
 
 ## Working on an issue
