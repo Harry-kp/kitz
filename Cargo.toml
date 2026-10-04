@@ -20,7 +20,7 @@ exclude = [".github/", "kitz.toml", "*.png", "docs/", "assets/", "tapes/"]
 # installs need no system libs. MSK IAM (SASL OAUTHBEARER) comes with the ssl
 # build; the `sasl` feature would only add Cyrus SASL (GSSAPI), which kitz
 # doesn't use and which would make Linux binaries depend on libsasl2.
-rdkafka = { version = "0.36", features = ["cmake-build", "ssl-vendored"] }
+rdkafka = { version = "0.39", features = ["cmake-build", "ssl-vendored"] }
 
 # AWS MSK IAM auth - the wedge. Generates the SigV4 SASL token.
 aws-types = "1"
