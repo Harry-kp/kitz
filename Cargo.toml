@@ -38,7 +38,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }  # pretty-print payloads, keys in original order
 toml = "0.8"
 anyhow = "1"
-dirs = "5"
+dirs = "7"
 libc = "0.2"       # dup2: keep librdkafka stderr logs off the TUI
 
 # The profile cargo-dist builds release binaries with.
